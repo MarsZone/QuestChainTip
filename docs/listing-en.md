@@ -72,8 +72,14 @@ Quests
 
 ## Screenshots
 
-1. Hover a world map quest marker — description + rewards + follow-up chain panel
-2. Shift chain window (dungeon flag, accept / hand-in locations)
-3. Item tooltip on hover inside the window
-4. Options panel
-5. Before / after: the same accepted quest in Questie vs. with this addon
+Three 1280×720 images are ready to upload, in `docs/screenshots/`:
+
+| File | What it shows |
+|---|---|
+| `01-hover-panel.png` | Hovering a world map quest marker — description + rewards + follow-up chain |
+| `02-chain-window.png` | Hold Shift — the full chain window |
+| `03-item-tooltip.png` | Item reward tooltip, compared against equipped gear |
+
+Optional extras: the options panel, and a before/after against plain Questie.
+
+> Regenerate with `python tools/make_screenshots.py` (originals live in `docs/screenshots/src/`).

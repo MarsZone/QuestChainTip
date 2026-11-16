@@ -25,6 +25,20 @@ Questie 只对「可接」的任务显示描述、奖励和后续链；已经接
 - 窗口可拖动、可滚动，`Esc` 关闭
 - 全部文案走自绘面板，不往系统 tooltip 里塞行，所以**不会闪烁**
 
+### 截图
+
+世界地图上悬停任务图标 —— 已接的任务也能看到描述、奖励和后续链：
+
+![悬停面板](docs/screenshots/01-hover-panel.png)
+
+按住 Shift —— 整条任务链的详情窗：
+
+![任务链详情窗](docs/screenshots/02-chain-window.png)
+
+奖励物品可以悬停查看，和身上装备直接对比：
+
+![物品奖励](docs/screenshots/03-item-tooltip.png)
+
 ### 依赖
 
 | 插件 | 说明 |
