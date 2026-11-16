@@ -231,6 +231,21 @@ cp -f *.lua *.toc "F:/Wow/World of Warcraft/_forever_/Interface/AddOns/QuestChai
 **版本号三处一致**：`toc` 的 `## Version`、`CHANGELOG.md` 的段落标题、zip 文件名。
 `build_release.py` 是读 `toc` 生成文件名的，所以只要改 `toc`，另外两个跟着对就行。
 
+### 各平台更新动作
+
+| 平台 | 更新怎么做 |
+|---|---|
+| GitHub | 打完包建一个新 Release（tag `v1.5.9`），附件换成新 zip |
+| Wago | `addons.wago.io` → 头像 → My Addons → 点插件 → `Upload New Version` → 传新 zip |
+| 新手盒子 | 创作者中心 → 我的插件 → 上传新版本 → 传新 zip |
+| NGA | 编辑原帖，改标题里的版本号，附件换新 zip |
+
+> **Wago 用的是 Custom Addon（手动上传）**，更新就是手动传一个 zip，slug 和链接不变，
+> 装过的人在 Wago 客户端里能看到新版本。
+> 另一个入口 `GitHub Addon Creation` 可以绑定仓库、从 GitHub Release 自动同步，
+> 但要求 tag / Release / zip 结构严格对应，出问题排查成本比手动高。
+> 这个插件稳定后发版频率很低，**手动传一次不到一分钟，不建议切**。
+
 ---
 
 ## 六、容易踩的坑
