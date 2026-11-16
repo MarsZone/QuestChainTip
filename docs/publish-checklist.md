@@ -88,17 +88,30 @@ QuestChainTip/Media/QuestChainTip.tga
 
 ## 四、各平台操作
 
-### 1. 新手盒子
+### 1. 新手盒子（wclbox.com）
 
-1. 进「插件上传 / 创作者中心」，新建插件
-2. 名称填 `任务链提示`（英文名 `Quest Chain Tip` 一起填，如果表单有英文名字段）
-3. 分类选 **任务 / Quests**
-4. 适用客户端选 **永久60 / 怀旧服**
-5. 上传 `dist/QuestChainTip-1.5.8.zip`（**不要解压、不要重新压**）
-6. 简介、详细说明：从 `docs/listing-zh.md` 复制
-7. 依赖填 `Questie`、`QuestieDB`（这两个是硬依赖，一定要写，否则玩家装上不工作）
-8. 上传截图，第一张当封面
-9. 提交审核
+站点确认过：`wclbox.com` → **魔兽世界插件库**在 `wclbox.com/games/1`，
+右上角头像菜单里有 **创作者中心**，插件就是在那儿发。
+
+**字段对照表（照这个填）**
+
+| 表单字段 | 填什么 |
+|---|---|
+| 名称 | `任务链提示 Quest Chain Tip` |
+| 分类 | **任务**（Questie、QuestieDB 都在这个分类，审核一看就懂） |
+| 简介 | `docs/listing-zh.md` 的「一句话简介」 |
+| 详细说明 | `docs/listing-zh.md` 的「详细说明」整段 |
+| 版本号 | `1.5.8`（和 toc 一致） |
+| 文件 | `dist/QuestChainTip-1.5.8.zip`（不要解压、不要重压） |
+| 图标 | `docs/icon-128.png` |
+| 截图 | `docs/screenshots/01~03`，第一张当封面 |
+| 依赖 | `Questie`、`QuestieDB`（本平台已收录：Questie = PluginItem/20，QuestieDB = PluginItem/32949） |
+| 项目主页（可选） | `https://github.com/MarsZone/QuestChainTip` |
+
+> ⚠️ 该站魔兽分区里的插件卡片大多标着「泰坦重铸」。如果表单里的「客户端/游戏版本」只有这一项，
+> 就按最接近的选，并**在详细说明开头补一句**：
+> 「适用客户端：永久60 / Interface 16001（与 QuestieDB_Forever 一致）」。
+> 不写清楚的话，用官方客户端的人装了会显示过期。
 
 > 平台如果要求填「插件 ID / 文件夹名」，就是 `QuestChainTip`，必须和 zip 里的文件夹同名。
 
