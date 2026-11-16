@@ -8,7 +8,7 @@
 
 | 物料 | 路径 | 说明 |
 |---|---|---|
-| 发布包 | `dist/QuestChainTip-1.5.9.zip` | 54.8 KB，顶层是 `QuestChainTip/` 文件夹，`toc` 在文件夹根部 |
+| 发布包 | `dist/QuestChainTip-1.5.9.zip` | 55.5 KB，顶层是 `QuestChainTip/` 文件夹，`toc` 在文件夹根部 |
 | 工程图标 | `docs/icon-128.png` | 128×128 PNG，Wago 用这个 |
 | 大图标 | `docs/icon-512.png` | 512×512 PNG，CurseForge 项目头像（要求 ≥400×400） |
 | 小图标 | `docs/icon-64.png` | 64×64，README / 帖子配图用 |

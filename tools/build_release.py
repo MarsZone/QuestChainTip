@@ -112,6 +112,12 @@ def main():
     meta, files = read_toc()
     entries = collect(meta, files)
 
+    # 许可证一并放进包：玩家解压后能看到，CurseForge / Wago 审核时也认这一项。
+    # toc 里只列运行文件，所以这里单独补一次。
+    license_path = os.path.join(ROOT, "LICENSE")
+    if os.path.isfile(license_path) and not any(rel == "LICENSE" for _, rel in entries):
+        entries.append((license_path, "LICENSE"))
+
     problems = check(meta, entries)
     if problems:
         print("检查未通过：")
