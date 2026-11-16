@@ -83,7 +83,7 @@ Visibility          →  Public（重要，Private 别人打不开）
 ------------------------------------------------------------
 
 Addon file (zip)
-E:\AI\wowaddones\QuestChainTip\dist\QuestChainTip-1.5.8.zip
+E:\AI\wowaddones\QuestChainTip\dist\QuestChainTip-1.5.9.zip
 
 Icon
 E:\AI\wowaddones\QuestChainTip\docs\icon-128.png

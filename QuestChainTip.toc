@@ -1,10 +1,12 @@
 ## Interface: 16001
 ## Title: |cff33ff99Quest Chain Tip|r
 ## Title-zhCN: |cff33ff99任务链提示|r
+## Title-zhTW: |cff33ff99任務鏈提示|r
 ## Notes: Shows the whole quest chain for any quest - including ones you have already accepted. Hold Shift on the world map for a full chain window: objectives, rewards, description, where to accept / hand in, dungeon flag.
 ## Notes-zhCN: 任意任务（含已接取）都能看整条任务链。在世界地图上按住 Shift 弹出窗口，展示整条任务链的完成条件/奖励/详情/接取与交付地点/是否副本。
+## Notes-zhTW: 任意任務（含已接取）都能看整條任務鏈。在世界地圖上按住 Shift 彈出視窗，展示整條任務鏈的完成條件/獎勵/詳情/接取與交付地點/是否副本。
 ## Author: A
-## Version: 1.5.8
+## Version: 1.5.9
 ## Category: Quests
 ## SavedVariables: QuestChainTipDB
 ## OptionalDeps: Questie, QuestieDB
@@ -12,6 +14,7 @@
 ## X-License: MIT
 ## X-Category: Quests
 
+Locale.lua
 Core.lua
 Log.lua
 Format.lua

@@ -9,6 +9,7 @@
 
 local ADDON, ns = ...
 local QCT = ns
+local L = QCT.Locale
 local F = QCT.Format
 local D = QCT.Data
 
@@ -30,17 +31,17 @@ local MAX_OBJECTIVE_LINES = 8
 local INDENT = "    "
 
 local STATE_TEXT = {
-    active = { text = "进行中", r = 1.00, g = 0.82, b = 0.00 },
-    completed = { text = "已完成", r = 0.55, g = 0.55, b = 0.55 },
-    available = { text = "可接", r = 0.25, g = 1.00, b = 0.25 },
-    locked = { text = "条件不足", r = 0.90, g = 0.40, b = 0.40 },
-    unknown = { text = "未知", r = 0.60, g = 0.60, b = 0.60 },
+    active = { text = L["进行中"], r = 1.00, g = 0.82, b = 0.00 },
+    completed = { text = L["已完成"], r = 0.55, g = 0.55, b = 0.55 },
+    available = { text = L["可接"], r = 0.25, g = 1.00, b = 0.25 },
+    locked = { text = L["条件不足"], r = 0.90, g = 0.40, b = 0.40 },
+    unknown = { text = L["未知"], r = 0.60, g = 0.60, b = 0.60 },
 }
 
 local KIND_TEXT = {
-    prereq = { text = "前置", r = 0.60, g = 0.60, b = 0.60 },
-    current = { text = "当前", r = 1.00, g = 0.82, b = 0.00 },
-    next = { text = "后续", r = 0.35, g = 0.85, b = 1.00 },
+    prereq = { text = L["前置"], r = 0.60, g = 0.60, b = 0.60 },
+    current = { text = L["当前"], r = 1.00, g = 0.82, b = 0.00 },
+    next = { text = L["后续"], r = 0.35, g = 0.85, b = 1.00 },
 }
 
 --------------------------------------------------------------------------------
@@ -60,7 +61,7 @@ local function GetFont()
             return fontPath, fontSize, fontFlags
         end
     end
-    fontPath, fontSize, fontFlags = "Fonts\\ARKaiT.ttf", 12, ""
+    fontPath, fontSize, fontFlags = "Fonts\\ARKai_T.ttf", 12, ""
     return fontPath, fontSize, fontFlags
 end
 
@@ -424,7 +425,7 @@ local function RewardLines(detail)
     local parts = {}
     if detail.xp and detail.xp > 0 then
         local r, g, b = F.DifficultyColor(detail.level, detail.id)
-        parts[#parts + 1] = F.Hex(r, g, b, F.Number(detail.xp) .. " 经验")
+        parts[#parts + 1] = F.Hex(r, g, b, F.Number(detail.xp) .. " " .. L["经验"])
     end
     if detail.money and detail.money > 0 then
         parts[#parts + 1] = F.Coins(detail.money)
@@ -464,7 +465,7 @@ function W:RenderQuestBlock(detail, kind)
 
     local tags = {}
     if detail.isDungeon then
-        tags[#tags + 1] = F.Hex(1, 0.55, 0.25, detail.tagId == 81 and "副本任务" or "团队副本")
+        tags[#tags + 1] = F.Hex(1, 0.55, 0.25, detail.tagId == 81 and L["副本任务"] or L["团队副本"])
     elseif detail.tagText then
         tags[#tags + 1] = F.Hex(0.85, 0.75, 0.45, detail.tagText)
     end
@@ -483,7 +484,7 @@ function W:RenderQuestBlock(detail, kind)
         startText = detail.startZone
     end
     if startText then
-        self:Push(INDENT .. F.Hex(0.6, 0.6, 0.6, "接取：") .. F.Hex(0.85, 0.85, 0.85, startText))
+        self:Push(INDENT .. F.Hex(0.6, 0.6, 0.6, L["接取："]) .. F.Hex(0.85, 0.85, 0.85, startText))
     end
 
     local endText
@@ -493,13 +494,13 @@ function W:RenderQuestBlock(detail, kind)
         endText = detail.endZone
     end
     if endText then
-        self:Push(INDENT .. F.Hex(0.6, 0.6, 0.6, "交付：") .. F.Hex(0.85, 0.85, 0.85, endText))
+        self:Push(INDENT .. F.Hex(0.6, 0.6, 0.6, L["交付："]) .. F.Hex(0.85, 0.85, 0.85, endText))
     end
 
     -- 任务详情
     local desc = detail.description or {}
     if #desc > 0 then
-        self:Push(INDENT .. F.Hex(0.55, 0.55, 0.55, "任务详情"))
+        self:Push(INDENT .. F.Hex(0.55, 0.55, 0.55, L["任务详情"]))
         local used = 0
         for _, paragraph in ipairs(desc) do
             if used >= MAX_DESC_LINES then break end
@@ -510,14 +511,14 @@ function W:RenderQuestBlock(detail, kind)
             end
         end
         if used >= MAX_DESC_LINES then
-            self:Push(INDENT .. "  " .. F.Hex(0.5, 0.5, 0.5, "…（描述较长，已截断）"))
+            self:Push(INDENT .. "  " .. F.Hex(0.5, 0.5, 0.5, L["…（描述较长，已截断）"]))
         end
     end
 
     -- 完成条件
     local objectives = detail.objectives or {}
     if #objectives > 0 then
-        self:Push(INDENT .. F.Hex(0.55, 0.55, 0.55, "完成条件"))
+        self:Push(INDENT .. F.Hex(0.55, 0.55, 0.55, L["完成条件"]))
         local used = 0
         for _, line in ipairs(objectives) do
             if used >= MAX_OBJECTIVE_LINES then break end
@@ -528,14 +529,14 @@ function W:RenderQuestBlock(detail, kind)
             end
         end
         if used >= MAX_OBJECTIVE_LINES then
-            self:Push(INDENT .. "  " .. F.Hex(0.5, 0.5, 0.5, "…（条件较多，已截断）"))
+            self:Push(INDENT .. "  " .. F.Hex(0.5, 0.5, 0.5, L["…（条件较多，已截断）"]))
         end
     end
 
     -- 奖励
     local rewards = RewardLines(detail)
     if #rewards > 0 then
-        self:Push(INDENT .. F.Hex(0.55, 0.55, 0.55, "奖励"))
+        self:Push(INDENT .. F.Hex(0.55, 0.55, 0.55, L["奖励"]))
         for _, line in ipairs(rewards) do
             self:PushWrapped(line, INDENT .. "  ", CONTENT_WIDTH - 12, 1, 1, 1)
         end
@@ -582,21 +583,25 @@ function W:Render(questId)
     if hiddenCompleted > 0 then
         self:PushDivider()
         self:Push(F.Hex(0.55, 0.55, 0.55,
-            "已隐藏 " .. hiddenCompleted .. " 个已完成的任务 · 点右上角「显示全部」展开"))
+            L.F("已隐藏 %d 个已完成的任务 · 点右上角「显示全部」展开", hiddenCompleted)))
     end
 
     if rendered == 0 then
-        self:Push(F.Hex(1, 0.4, 0.4, "没有取到任务数据（Questie 数据源可能未就绪）"))
+        self:Push(F.Hex(1, 0.4, 0.4, L["没有取到任务数据（Questie 数据源可能未就绪）"]))
         self:PushBlank(20)
     end
 
     self.content:SetHeight(math.max(1, self.cursorY + 8))
     self.questId = questId
 
-    local name = D:GetName(questId) or ("任务 " .. tostring(questId))
-    local suffix = "（" .. rendered .. " 环"
-        .. (hiddenCompleted > 0 and ("，已隐藏 " .. hiddenCompleted .. " 个已完成") or "") .. "）"
-    self.title:SetText("任务链详情 · " .. name .. F.Hex(0.6, 0.6, 0.6, suffix))
+    local name = D:GetName(questId) or L.F("任务 %s", tostring(questId))
+    local suffix
+    if hiddenCompleted > 0 then
+        suffix = L.F("（%d 环，已隐藏 %d 个已完成）", rendered, hiddenCompleted)
+    else
+        suffix = L.F("（%d 环）", rendered)
+    end
+    self.title:SetText(L.F("任务链详情 · %s", name) .. F.Hex(0.6, 0.6, 0.6, suffix))
 
     self:UpdateCompletedToggle()
 
@@ -620,10 +625,10 @@ function W:UpdateCompletedToggle()
 
     toggle:Show()
     if self.showCompleted then
-        self.completedLabel:SetText("隐藏已完成")
+        self.completedLabel:SetText(L["隐藏已完成"])
         self.completedLabel:SetTextColor(1, 0.82, 0.2)
     else
-        self.completedLabel:SetText("显示全部 (" .. (self.hiddenCompleted or 0) .. ")")
+        self.completedLabel:SetText(L.F("显示全部 (%d)", self.hiddenCompleted or 0))
         self.completedLabel:SetTextColor(0.85, 0.85, 0.85)
     end
 end
@@ -691,7 +696,7 @@ function W:Open(questId)
         QCT.Log:Add("window", "渲染出错:", tostring(err))
         if self.lastPrintedError ~= tostring(err) then
             self.lastPrintedError = tostring(err)
-            QCT:Print("任务链窗口渲染出错：" .. tostring(err))
+            QCT:Print(L.F("任务链窗口渲染出错：%s", tostring(err)))
         end
         return
     end

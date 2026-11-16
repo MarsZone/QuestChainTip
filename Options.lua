@@ -5,6 +5,7 @@
 
 local ADDON, ns = ...
 local QCT = ns
+local L = QCT.Locale
 
 local O = {}
 QCT.Options = O
@@ -193,11 +194,11 @@ local function CreatePanel()
 
     local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("任务链提示 - 设置")
+    title:SetText(L["任务链提示 - 设置"])
 
     local subtitle = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-    subtitle:SetText("在世界地图上悬停任务图标显示简介，按住 Shift 打开整条任务链详情窗；小地图上不弹")
+    subtitle:SetText(L["在世界地图上悬停任务图标显示简介，按住 Shift 打开整条任务链详情窗；小地图上不弹"])
     subtitle:SetTextColor(0.7, 0.7, 0.7)
 
     if UIPanelCloseButton then
@@ -207,13 +208,13 @@ local function CreatePanel()
 
     local y = -60
 
-    NewCheck(frame, "启用插件", "enabled", 22, y)
+    NewCheck(frame, L["启用插件"], "enabled", 22, y)
     y = y - ROW
 
     -- 悬停面板显示范围：三态循环按钮
-    NewLabel(frame, "悬停面板", 22, y + 3)
+    NewLabel(frame, L["悬停面板"], 22, y + 3)
     local MODE_ORDER = { "off", "map", "all" }
-    local MODE_LABEL = { off = "关闭", map = "仅世界地图", all = "全部位置" }
+    local MODE_LABEL = { off = L["不显示"], map = L["仅世界地图"], all = L["全部位置"] }
     local modeButton
     modeButton = NewButton(frame, MODE_LABEL[QCT.db.panelMode or "map"], 120, 200, y, function()
         local current = QCT.db.panelMode or "map"
@@ -231,50 +232,50 @@ local function CreatePanel()
     }
     y = y - ROW
 
-    NewCheck(frame, "显示任务描述", "showDescription", 22, y)
-    NewStepper(frame, "描述最多行数", "descLines", 1, 12, 200, y + 3)
+    NewCheck(frame, L["显示任务描述"], "showDescription", 22, y)
+    NewStepper(frame, L["描述最多行数"], "descLines", 1, 12, 200, y + 3)
     y = y - ROW
 
-    NewCheck(frame, "显示任务奖励（经验/金钱/物品/声望）", "showRewards", 22, y)
+    NewCheck(frame, L["显示任务奖励（经验/金钱/物品/声望）"], "showRewards", 22, y)
     y = y - ROW
 
-    NewCheck(frame, "显示后续任务链", "showChain", 22, y)
+    NewCheck(frame, L["显示后续任务链"], "showChain", 22, y)
     y = y - ROW
 
-    NewCheck(frame, "后续任务每行显示奖励与状态", "chainRewards", 40, y)
+    NewCheck(frame, L["后续任务每行显示奖励与状态"], "chainRewards", 40, y)
     y = y - ROW
 
-    NewStepper(frame, "普通状态显示层数", "chainDepth", 1, 10, 40, y + 3)
+    NewStepper(frame, L["普通状态显示层数"], "chainDepth", 1, 10, 40, y + 3)
     y = y - ROW
 
-    NewStepper(frame, "详情窗最多显示环数", "chainDepthShift", 1, 40, 40, y + 3)
+    NewStepper(frame, L["详情窗最多显示环数"], "chainDepthShift", 1, 40, 40, y + 3)
     y = y - ROW
 
-    NewCheck(frame, "显示前置任务", "showPrereq", 22, y)
+    NewCheck(frame, L["显示前置任务"], "showPrereq", 22, y)
     y = y - ROW
 
-    NewCheck(frame, "聊天框显示诊断信息（排查问题时用）", "diag", 22, y)
+    NewCheck(frame, L["聊天框显示诊断信息（排查问题时用）"], "diag", 22, y)
     y = y - ROW
 
-    NewCheck(frame, "调试输出（排查问题时用）", "debug", 22, y)
+    NewCheck(frame, L["调试输出（排查问题时用）"], "debug", 22, y)
     y = y - ROW - 8
 
-    O.resetButton = NewButton(frame, "恢复默认", 100, 22, y, function()
+    O.resetButton = NewButton(frame, L["恢复默认"], 100, 22, y, function()
         for key, value in pairs(QCT.Defaults or {}) do
             QCT.db[key] = value
         end
         SyncControls()
         Apply()
-        QCT:Print("已恢复默认设置")
+        QCT:Print(L["已恢复默认设置"])
     end)
 
-    NewButton(frame, "关闭", 100, 130, y, function()
+    NewButton(frame, L["关闭"], 100, 130, y, function()
         frame:Hide()
     end)
 
     local hint = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     hint:SetPoint("BOTTOMLEFT", 22, 16)
-    hint:SetText("提示：设置会保存在 QuestChainTipDB")
+    hint:SetText(L["提示：设置会保存在 QuestChainTipDB"])
     hint:SetTextColor(0.6, 0.6, 0.6)
 
     frame:SetScript("OnShow", SyncControls)

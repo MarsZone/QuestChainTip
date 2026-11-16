@@ -8,6 +8,7 @@ local ADDON, ns = ...
 local QCT = ns
 local F = QCT.Format
 local D = QCT.Data
+local L = QCT.Locale
 
 local T = {}
 QCT.Tooltip = T
@@ -24,11 +25,11 @@ local REP_ICON = "|TInterface\\AddOns\\Questie\\Icons\\reputation.blp:14:14:0:0|
 local INDENT = "   "
 
 local STATE_TEXT = {
-    active = { text = "(进行中)", r = 1.00, g = 0.82, b = 0.00 },
-    completed = { text = "(已完成)", r = 0.55, g = 0.55, b = 0.55 },
-    available = { text = "(可接)", r = 0.25, g = 1.00, b = 0.25 },
-    locked = { text = "(条件不足)", r = 0.90, g = 0.40, b = 0.40 },
-    unknown = { text = "(未知)", r = 0.60, g = 0.60, b = 0.60 },
+    active = { text = L["(进行中)"], r = 1.00, g = 0.82, b = 0.00 },
+    completed = { text = L["(已完成)"], r = 0.55, g = 0.55, b = 0.55 },
+    available = { text = L["(可接)"], r = 0.25, g = 1.00, b = 0.25 },
+    locked = { text = L["(条件不足)"], r = 0.90, g = 0.40, b = 0.40 },
+    unknown = { text = L["(未知)"], r = 0.60, g = 0.60, b = 0.60 },
 }
 
 --------------------------------------------------------------------------------
@@ -56,7 +57,7 @@ local function QuestTitle(questId)
             return text
         end
     end
-    local name = D:GetName(questId) or ("任务" .. tostring(questId))
+    local name = D:GetName(questId) or L.F("任务 %s", tostring(questId))
     local level = D:GetLevel(questId)
     local prefix = (level and level > 0) and ("[" .. level .. "] ") or ""
     return F.DifficultyText(level, questId, prefix .. name)
@@ -68,7 +69,7 @@ local function RewardShort(questId)
     local xp = D:GetXP(questId)
     if xp > 0 then
         local r, g, b = F.DifficultyColor(D:GetLevel(questId), questId)
-        parts[#parts + 1] = F.Hex(r, g, b, "(" .. F.Number(xp) .. "经验)")
+        parts[#parts + 1] = F.Hex(r, g, b, "(" .. F.Number(xp) .. L["经验"] .. ")")
     end
     local money = D:GetMoney(questId)
     if money > 0 then
@@ -330,7 +331,7 @@ function T:Update(questId)
         self:Hide()
         if not D.available and not self.warnedNoData then
             self.warnedNoData = true
-            QCT:Print("没有读到 Questie 的任务数据（请确认 Questie 已启用）。输入 |cffffff00/qct why|r 查看详情。")
+            QCT:Print(L["没有读到 Questie 的任务数据（请确认 Questie 已启用）。输入 |cffffff00/qct why|r 查看详情。"])
         end
         QCT:Debug("任务", tostring(questId), "拿不到任何数据（Questie 未就绪且客户端也查不到），面板隐藏")
         return
@@ -347,7 +348,7 @@ function T:Update(questId)
         -- 同一个错误只提示一次，避免刷屏
         if self.lastPrintedError ~= self.lastError then
             self.lastPrintedError = self.lastError
-            QCT:Print("面板渲染出错：" .. tostring(err))
+            QCT:Print(L.F("面板渲染出错：%s", tostring(err)))
         end
         return
     end
@@ -396,7 +397,7 @@ function T:Build(questId)
         local desc = D:GetDescription(questId)
         if #desc == 0 then return end
 
-        addHeader("任务描述")
+        addHeader(L["任务描述"])
         local maxLines = shift and 30 or db.descLines
         local used = 0
         local truncated = false
@@ -409,7 +410,7 @@ function T:Build(questId)
             end
         end
         if truncated then
-            addLine(F.DIM .. INDENT .. "…（在世界地图上按住 Shift 查看完整任务链）|r")
+            addLine(F.DIM .. INDENT .. L["…（在世界地图上按住 Shift 查看完整任务链）"] .. "|r")
         end
         hasContent = true
     end)
@@ -425,12 +426,12 @@ function T:Build(questId)
 
         if not (xp > 0 or money > 0 or #items > 0 or #reputations > 0) then return end
 
-        addHeader("任务奖励")
+        addHeader(L["任务奖励"])
 
         local parts = {}
         if xp > 0 then
             local r, g, b = F.DifficultyColor(D:GetLevel(questId), questId)
-            parts[#parts + 1] = F.Hex(r, g, b, F.Number(xp) .. "经验")
+            parts[#parts + 1] = F.Hex(r, g, b, F.Number(xp) .. L["经验"])
         end
         if money > 0 then
             parts[#parts + 1] = F.Coins(money)
@@ -463,7 +464,7 @@ function T:Build(questId)
         local chain, truncated = D:BuildChain(questId, depth)
         if #chain == 0 then return end
 
-        addHeader(NEXT_ICON .. " 后续任务")
+        addHeader(NEXT_ICON .. " " .. L["后续任务"])
         for _, nextId in ipairs(chain) do
             local right = ""
             if db.chainRewards then
@@ -473,7 +474,7 @@ function T:Build(questId)
             addDouble(INDENT .. QuestTitle(nextId), right .. StateText(nextId))
         end
         if truncated and not shift then
-            addLine(F.DIM .. INDENT .. "…（在世界地图上按住 Shift 查看完整任务链）|r")
+            addLine(F.DIM .. INDENT .. L["…（在世界地图上按住 Shift 查看完整任务链）"] .. "|r")
         end
         hasContent = true
     end)
@@ -485,7 +486,7 @@ function T:Build(questId)
         local prereqs = D:BuildPrerequisiteChain(questId, 1)
         if #prereqs == 0 then return end
 
-        addHeader("前置任务")
+        addHeader(L["前置任务"])
         for _, preId in ipairs(prereqs) do
             addDouble(INDENT .. QuestTitle(preId), StateText(preId))
         end
@@ -1003,7 +1004,7 @@ end
 function T:OpenChainWindow(questId)
     if not QCT.Window then return end
     if not questId then
-        QCT:Print("没有可显示的任务：先把鼠标移到任务上，或先打开任务日志。")
+        QCT:Print(L["没有可显示的任务：先把鼠标移到任务上，或先打开任务日志。"])
         return
     end
     local ok, err = pcall(QCT.Window.Open, QCT.Window, questId)

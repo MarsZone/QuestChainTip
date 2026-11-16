@@ -8,8 +8,16 @@ local QCT = ns
 local F = {}
 QCT.Format = F
 
+local L = QCT.Locale
+
 local floor = math.floor
 local strformat = string.format
+
+---当前语言是不是中文（决定换行按字断还是按词断）
+local function IsCJK()
+    if L and L.IsCJK then return L.IsCJK() end
+    return true
+end
 
 --------------------------------------------------------------------------------
 -- 颜色
@@ -105,9 +113,13 @@ function F.Coins(copper)
     local silver = floor((copper % 10000) / 100)
     local copperOnly = copper % 100
     local parts = {}
-    if gold > 0 then parts[#parts + 1] = gold .. "金" end
-    if silver > 0 then parts[#parts + 1] = silver .. "银" end
-    if copperOnly > 0 or #parts == 0 then parts[#parts + 1] = copperOnly .. "铜" end
+    -- 单位跟语言走：中文「金/银/铜」，英文 g/s/c。繁体是「金/銀/銅」。
+    local uGold = (L and L["金"]) or "金"
+    local uSilver = (L and L["银"]) or "银"
+    local uCopper = (L and L["铜"]) or "铜"
+    if gold > 0 then parts[#parts + 1] = gold .. uGold end
+    if silver > 0 then parts[#parts + 1] = silver .. uSilver end
+    if copperOnly > 0 or #parts == 0 then parts[#parts + 1] = copperOnly .. uCopper end
     return table.concat(parts, "")
 end
 
@@ -233,6 +245,58 @@ local function wrapByMeasure(text, prefix, width, fontSource)
     return lines
 end
 
+---按空格断词（拉丁文字用）。
+---中文可以逐字断，因为字与字之间天然可断；英文逐字断会把单词切成 "descri / ption"，
+---所以英文必须按词累加。只有单个词本身比整行还宽时才退化成逐字硬切（长 URL 那种）。
+local function wrapByWords(text, prefix, width, fontSource)
+    local lines = {}
+    local line = ""
+
+    local function flush()
+        if line ~= "" then
+            lines[#lines + 1] = prefix .. line
+            line = ""
+        end
+    end
+
+    for token in text:gmatch("%S+") do
+        -- Lua 5.4 的 for 控制变量是只读的，硬切时要改词，所以拷一份
+        local word = token
+
+        -- 单个词就超宽：先切成几段，每段独占一行
+        while word ~= "" and measureText(prefix .. word, fontSource) > width do
+            local i = 1
+            local chunk = ""
+            while i <= #word do
+                local ni = nextCharIndex(word, i)
+                local piece = word:sub(i, ni - 1)
+                if chunk ~= "" and measureText(prefix .. chunk .. piece, fontSource) > width then
+                    break
+                end
+                chunk = chunk .. piece
+                i = ni
+            end
+            if chunk == "" then break end
+            flush()
+            lines[#lines + 1] = prefix .. chunk
+            word = word:sub(i)
+        end
+
+        if word ~= "" then
+            local candidate = (line == "") and word or (line .. " " .. word)
+            if line ~= "" and measureText(prefix .. candidate, fontSource) > width then
+                flush()
+                line = word
+            else
+                line = candidate
+            end
+        end
+    end
+
+    flush()
+    return lines
+end
+
 ---把一段文字按宽度折行，返回带前缀的行数组。
 ---@param text string?
 ---@param prefix string? 每行前缀（缩进）
@@ -245,11 +309,17 @@ function F.Wrap(text, prefix, width, fontSource)
     width = width or 300
 
     local normalized = text:gsub("\r", ""):gsub("\n", " "):gsub("%s+", " ")
-    local key = width .. "\1" .. prefix .. "\1" .. normalized
+    local lang = (L and L.Current and L.Current()) or "?"
+    local key = width .. "\1" .. prefix .. "\1" .. lang .. "\1" .. normalized
     local cached = wrapCache[key]
     if cached then return cached end
 
-    local lines = wrapByMeasure(normalized, prefix, width, fontSource)
+    local lines
+    if IsCJK() then
+        lines = wrapByMeasure(normalized, prefix, width, fontSource)
+    else
+        lines = wrapByWords(normalized, prefix, width, fontSource)
+    end
 
     if wrapCacheSize > 500 then
         wrapCache = {}

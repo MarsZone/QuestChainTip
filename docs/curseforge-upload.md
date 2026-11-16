@@ -1,4 +1,4 @@
-# CurseForge 上传清单 —— Quest Chain Tip 1.5.8
+# CurseForge 上传清单 —— Quest Chain Tip 1.5.9
 
 > 目标：在 CurseForge 建一个公开项目，让 WowUp / CurseBreaker / CurseForge 客户端的玩家能搜到并安装。
 > 全部字段照抄本文，不需要自己想文案。
@@ -56,15 +56,15 @@ Questie enriches quests you can still accept. This adds the same for quests alre
 
 | 字段 | 填什么 |
 |---|---|
-| **File** | `E:\AI\wowaddones\QuestChainTip\dist\QuestChainTip-1.5.8.zip` |
-| **Display Name** | 自动读成 `Quest Chain Tip 1.5.8`，不用改 |
+| **File** | `E:\AI\wowaddones\QuestChainTip\dist\QuestChainTip-1.5.9.zip` |
+| **Display Name** | 自动读成 `Quest Chain Tip 1.5.9`，不用改 |
 | **Release Type** | `Release` |
 | **Game Versions** | 应自动勾上 **`1.60.1`**；如果没勾上，手动在列表里找到 `1.60.1` 勾选 |
 | **Changelog** | 见下方「Changelog」 |
 | **Changelog Type** | `Markdown` |
 
 > ⚠️ 上传框是系统级弹窗，路径可以直接 `Ctrl+V` 粘进去再回车：
-> `E:\AI\wowaddones\QuestChainTip\dist\QuestChainTip-1.5.8.zip`
+> `E:\AI\wowaddones\QuestChainTip\dist\QuestChainTip-1.5.9.zip`
 
 ---
 

@@ -27,8 +27,8 @@ Wago 不需要审核、不卡 `Interface: 16001`，传完立刻有公开页面�
 3. 依次填：
    - **Name**：`Quest Chain Tip`
    - **Game**：World of Warcraft
-   - **File**：上传 `E:\AI\wowaddones\QuestChainTip\dist\QuestChainTip-1.5.8.zip`
-     （版本号会自动从 `toc` 读成 1.5.8，不用手填）
+   - **File**：上传 `E:\AI\wowaddones\QuestChainTip\dist\QuestChainTip-1.5.9.zip`
+     （版本号会自动从 `toc` 读成 1.5.9，不用手填）
    - **Description**：粘 `docs/listing-en.md` 的详细说明
    - **Icon**：`docs/icon-128.png`
    - **Screenshots**：`docs/screenshots/` 三张
@@ -68,7 +68,7 @@ Wago 不需要审核、不卡 `Interface: 16001`，传完立刻有公开页面�
 
 ### 截图 4：Wago.io 插件页面（证明条件②）
 
-- 画面要包含：插件名、版本 1.5.8、下载按钮、发布时间
+- 画面要包含：插件名、版本 1.5.9、下载按钮、发布时间
 - 文件名建议：`wago-插件页.png`
 
 ### 截图 5：插件实机效果（证明「可正常运行、有实际价值」）

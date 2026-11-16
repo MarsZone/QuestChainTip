@@ -6,6 +6,7 @@ QuestChainTip / 任务链提示
 
 local ADDON, ns = ...
 local QCT = ns
+local L = QCT.Locale
 
 QCT.ADDON = ADDON
 QCT.VERSION = "1.0.0"
@@ -55,7 +56,7 @@ end
 -- 输出
 --------------------------------------------------------------------------------
 
-local PREFIX = "|cff33ff99任务链提示|r: "
+local PREFIX = L["|cff33ff99任务链提示|r: "]
 
 ---@param ... any 可以传多个值，会自动 tostring 后用空格连起来
 function QCT:Print(...)
@@ -132,8 +133,8 @@ function QCT:Start()
                 if not ok then self:Trace("start", "延迟刷新失败:", tostring(err)) end
                 return
             end
-            self:Print("没有找到 Questie / QuestieDB，本插件需要它们提供任务数据，请确认 Questie 已启用。")
-            self:Print("输入 |cffffff00/qct why|r 可以查看详细状态。")
+            self:Print(L["没有找到 Questie / QuestieDB，本插件需要它们提供任务数据，请确认 Questie 已启用。"])
+            self:Print(L["输入 |cffffff00/qct why|r 可以查看详细状态。"])
         end)
     end
 
@@ -242,21 +243,22 @@ end)
 --------------------------------------------------------------------------------
 
 local function PrintHelp()
-    QCT:Print("命令:")
-    QCT:Print("  |cffffff00/qct|r - 打开设置界面")
-    QCT:Print("  |cffffff00/qct on|off|r - 启用/关闭")
-    QCT:Print("  |cffffff00/qct desc|reward|chain|reward2|prereq|r - 分项开关")
-    QCT:Print("  |cffffff00/qct depth <n>|r - 普通状态下后续任务层数 (当前 " .. tostring(QCT.db.chainDepth) .. ")")
-    QCT:Print("  |cffffff00/qct depthshift <n>|r - 详情窗最多环数 (当前 " .. tostring(QCT.db.chainDepthShift) .. ")")
-    QCT:Print("  |cffffff00/qct debug|r - 调试输出")
-    QCT:Print("  |cffffff00/qct explain|r - 聊天框诊断信息（为什么没开窗，默认关）")
-    QCT:Print("  |cffffff00/qct log|r - 列出当前任务日志的识别结果")
-    QCT:Print("  |cffffff00/qct dump <任务ID>|r - 打印某任务解析结果")
-    QCT:Print("  |cffffff00/qct test|r - 强制画一个测试面板（检查显示是否正常）")
-    QCT:Print("  |cffffff00/qct detail <任务ID>|r - 打开任务链详情窗（等价于在地图上按住 Shift）")
-    QCT:Print("  |cffffff00/qct rewards <任务ID>|r - 探测该任务的奖励接口，结果写入日志")
-    QCT:Print("  |cffffff00/qct why|r - 打印运行状态，排查为什么没显示")
-    QCT:Print("  |cffffff00/qct trace|r - 打印后台日志（默认一直在记，无需开启）")
+    QCT:Print(L["命令:"])
+    QCT:Print(L["  |cffffff00/qct|r - 打开设置界面"])
+    QCT:Print(L["  |cffffff00/qct on|off|r - 启用/关闭"])
+    QCT:Print(L["  |cffffff00/qct desc|reward|chain|reward2|prereq|r - 分项开关"])
+    QCT:Print(L.F("  |cffffff00/qct depth <n>|r - 普通状态下后续任务层数 (当前 %d)", QCT.db.chainDepth))
+    QCT:Print(L.F("  |cffffff00/qct depthshift <n>|r - 详情窗最多环数 (当前 %d)", QCT.db.chainDepthShift))
+    QCT:Print(L["  |cffffff00/qct debug|r - 调试输出"])
+    QCT:Print(L["  |cffffff00/qct explain|r - 聊天框诊断信息（为什么没开窗，默认关）"])
+    QCT:Print(L["  |cffffff00/qct log|r - 列出当前任务日志的识别结果"])
+    QCT:Print(L["  |cffffff00/qct dump <任务ID>|r - 打印某任务解析结果"])
+    QCT:Print(L["  |cffffff00/qct test|r - 强制画一个测试面板（检查显示是否正常）"])
+    QCT:Print(L["  |cffffff00/qct detail <任务ID>|r - 打开任务链详情窗（等价于在地图上按住 Shift）"])
+    QCT:Print(L["  |cffffff00/qct rewards <任务ID>|r - 探测该任务的奖励接口，结果写入日志"])
+    QCT:Print(L["  |cffffff00/qct why|r - 打印运行状态，排查为什么没显示"])
+    QCT:Print(L["  |cffffff00/qct trace|r - 打印后台日志（默认一直在记，无需开启）"])
+    QCT:Print(L["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"])
 end
 
 SLASH_QUESTCHAINTIP1 = "/qct"
@@ -270,57 +272,61 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
         if QCT.Options then
             QCT.Options:Open()
         else
-            QCT:Print("设置界面未加载")
+            QCT:Print(L["设置界面未加载"])
         end
+    elseif cmd == "locale" then
+        local want = (rest or ""):gsub("%s+", "")
+        local now = L.SetLocale(want ~= "" and want or "auto")
+        QCT:Print(L.F("界面语言已切换为 %s（/reload 后完全生效）", now))
     elseif cmd == "toggle" then
         QCT.db.enabled = not QCT.db.enabled
-        QCT:Print("插件已" .. (QCT.db.enabled and "|cff00ff00开启|r" or "|cffff0000关闭|r"))
+        QCT:Print(L.F("插件已%s", L[QCT.db.enabled and "|cff00ff00开启|r" or "|cffff0000关闭|r"]))
     elseif cmd == "on" then
         QCT.db.enabled = true
-        QCT:Print("插件已|cff00ff00开启|r")
+        QCT:Print(L.F("插件已%s", L["|cff00ff00开启|r"]))
     elseif cmd == "off" then
         QCT.db.enabled = false
-        QCT:Print("插件已|cffff0000关闭|r")
+        QCT:Print(L.F("插件已%s", L["|cffff0000关闭|r"]))
     elseif cmd == "desc" then
         QCT.db.showDescription = not QCT.db.showDescription
-        QCT:Print("任务描述: " .. (QCT.db.showDescription and "开" or "关"))
+        QCT:Print(L.F("任务描述: %s", L[QCT.db.showDescription and "开" or "关"]))
     elseif cmd == "reward" then
         QCT.db.showRewards = not QCT.db.showRewards
-        QCT:Print("任务奖励: " .. (QCT.db.showRewards and "开" or "关"))
+        QCT:Print(L.F("任务奖励: %s", L[QCT.db.showRewards and "开" or "关"]))
     elseif cmd == "chain" then
         QCT.db.showChain = not QCT.db.showChain
-        QCT:Print("后续任务链: " .. (QCT.db.showChain and "开" or "关"))
+        QCT:Print(L.F("后续任务链: %s", L[QCT.db.showChain and "开" or "关"]))
     elseif cmd == "reward2" then
         QCT.db.chainRewards = not QCT.db.chainRewards
-        QCT:Print("后续任务奖励行: " .. (QCT.db.chainRewards and "开" or "关"))
+        QCT:Print(L.F("后续任务奖励行: %s", L[QCT.db.chainRewards and "开" or "关"]))
     elseif cmd == "prereq" then
         QCT.db.showPrereq = not QCT.db.showPrereq
-        QCT:Print("前置任务: " .. (QCT.db.showPrereq and "开" or "关"))
+        QCT:Print(L.F("前置任务: %s", L[QCT.db.showPrereq and "开" or "关"]))
     elseif cmd == "depthshift" then
         local n = tonumber(rest)
         if n and n > 0 and n <= 20 then
             QCT.db.chainDepthShift = math.floor(n)
-            QCT:Print("详情窗最多环数: " .. QCT.db.chainDepthShift)
+            QCT:Print(L.F("详情窗最多环数: %d", QCT.db.chainDepthShift))
         else
-            QCT:Print("请输入 1-20 的数字")
+            QCT:Print(L["请输入 1-20 的数字"])
         end
     elseif cmd == "depth" then
         local n = tonumber(rest)
         if n and n > 0 and n <= 20 then
             QCT.db.chainDepth = math.floor(n)
-            QCT:Print("普通状态后续任务层数: " .. QCT.db.chainDepth)
+            QCT:Print(L.F("普通状态后续任务层数: %d", QCT.db.chainDepth))
         else
-            QCT:Print("请输入 1-20 的数字")
+            QCT:Print(L["请输入 1-20 的数字"])
         end
     elseif cmd == "debug" then
         QCT.db.debug = not QCT.db.debug
-        QCT:Print("调试输出: " .. (QCT.db.debug and "开" or "关"))
+        QCT:Print(L.F("调试输出: %s", L[QCT.db.debug and "开" or "关"]))
     elseif cmd == "explain" then
         QCT.db.diag = not QCT.db.diag
-        QCT:Print("聊天框诊断信息: " .. (QCT.db.diag and "开" or "关"))
+        QCT:Print(L.F("聊天框诊断信息: %s", L[QCT.db.diag and "开" or "关"]))
     elseif cmd == "log" then
         local data = QCT.Data
-        QCT:Print("任务日志条目: " .. tostring(data.logCount or 0))
+        QCT:Print(L.F("任务日志条目: %d", data.logCount or 0))
         local count = 0
         for title, id in pairs(data.logByTitle or {}) do
             count = count + 1
@@ -332,15 +338,15 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
     elseif cmd == "traceclear" then
         if QCT.Log then
             QCT.Log:Clear()
-            QCT:Print("日志已清空")
+            QCT:Print(L["日志已清空"])
         end
     elseif cmd == "rewards" then
         local id = tonumber(rest)
         if id then
             QCT.Data:ProbeRewardAPI(id, true)
-            QCT:Print("已探测任务 " .. id .. " 的奖励接口，结果写入日志。输入 |cffffff00/qct trace 12|r 查看。")
+            QCT:Print(L.F("已探测任务 %d 的奖励接口，结果写入日志。输入 |cffffff00/qct trace 12|r 查看。", id))
         else
-            QCT:Print("用法: /qct rewards <任务ID>")
+            QCT:Print(L["用法: /qct rewards <任务ID>"])
         end
     elseif cmd == "detail" then
         local id = tonumber(rest)
@@ -352,7 +358,7 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
         if id and QCT.Window then
             QCT.Window:Open(id)
         else
-            QCT:Print("用法: /qct detail <任务ID>（或者把鼠标悬停在任务上再输入）")
+            QCT:Print(L["用法: /qct detail <任务ID>（或者把鼠标悬停在任务上再输入）"])
         end
     elseif cmd == "test" then
         if QCT.Tooltip then
@@ -365,7 +371,7 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
     elseif cmd == "dump" then
         local id = tonumber(rest)
         if not id then
-            QCT:Print("用法: /qct dump <任务ID>")
+            QCT:Print(L["用法: /qct dump <任务ID>"])
         else
             QCT.Data:DumpQuest(id)
         end

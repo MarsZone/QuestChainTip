@@ -8,7 +8,7 @@
 
 | 物料 | 路径 | 说明 |
 |---|---|---|
-| 发布包 | `dist/QuestChainTip-1.5.8.zip` | 45.8 KB，顶层是 `QuestChainTip/` 文件夹，`toc` 在文件夹根部 |
+| 发布包 | `dist/QuestChainTip-1.5.9.zip` | 54.8 KB，顶层是 `QuestChainTip/` 文件夹，`toc` 在文件夹根部 |
 | 工程图标 | `docs/icon-128.png` | 128×128 PNG，Wago 用这个 |
 | 大图标 | `docs/icon-512.png` | 512×512 PNG，CurseForge 项目头像（要求 ≥400×400） |
 | 小图标 | `docs/icon-64.png` | 64×64，README / 帖子配图用 |
@@ -42,7 +42,7 @@ python /tmp/runtests.py | grep -E "FAIL|全部通过"
 python tools/build_release.py
 
 # 3) 确认包结构：顶层必须是 QuestChainTip/ 文件夹，不能是散文件
-python -c "import zipfile;print('\n'.join(zipfile.ZipFile('dist/QuestChainTip-1.5.8.zip').namelist()))"
+python -c "import zipfile;print('\n'.join(zipfile.ZipFile('dist/QuestChainTip-1.5.9.zip').namelist()))"
 ```
 
 包结构应该是这样（9 个文件，不多不少）：
@@ -77,7 +77,7 @@ QuestChainTip/Media/QuestChainTip.tga
 
 > **一句话**：GitHub 先发拿链接 → 拍截图 → 新手盒子 → 网易UU → NGA → Wago → CurseForge。
 > GitHub 之所以排第一不是因为它面向国内玩家，而是它**不用审核、不用截图**，
-> 可以立刻把「版本 1.5.8 就是这个 zip」这件事钉死。
+> 可以立刻把「版本 1.5.9 就是这个 zip」这件事钉死。
 
 > ✅ **关于 CurseForge（修正早前判断）**：它的版本识别确实读 `toc` 的 `## Interface: 16001`，
 > 但 CurseForge 早就有 **Forever** 分支专门对应 1.60.x：
@@ -107,8 +107,8 @@ QuestChainTip/Media/QuestChainTip.tga
 | 分类 | **任务**（Questie、QuestieDB 都在这个分类，审核一看就懂） |
 | 简介 | `docs/listing-zh.md` 的「一句话简介」 |
 | 详细说明 | `docs/listing-zh.md` 的「详细说明」整段 |
-| 版本号 | `1.5.8`（和 toc 一致） |
-| 文件 | `dist/QuestChainTip-1.5.8.zip`（不要解压、不要重压） |
+| 版本号 | `1.5.9`（和 toc 一致） |
+| 文件 | `dist/QuestChainTip-1.5.9.zip`（不要解压、不要重压） |
 | 图标 | `docs/icon-128.png` |
 | 截图 | `docs/screenshots/01~03`，第一张当封面 |
 | 依赖 | `Questie`、`QuestieDB`（本平台已收录：Questie = PluginItem/20，QuestieDB = PluginItem/32949） |
@@ -131,7 +131,7 @@ QuestChainTip/Media/QuestChainTip.tga
 标题建议：
 
 ```
-[插件] 任务链提示 Quest Chain Tip 1.5.8 —— 已接的任务也能看后续链、奖励和详情
+[插件] 任务链提示 Quest Chain Tip 1.5.9 —— 已接的任务也能看后续链、奖励和详情
 ```
 
 正文 = `docs/listing-zh.md` 的详细说明 + 截图 + zip 附件。
@@ -139,7 +139,7 @@ QuestChainTip/Media/QuestChainTip.tga
 
 ### 4. GitHub（单一真源，先发这个）
 
-本地仓库**已经建好并打好 tag 了**（`v1.5.8`，工作区干净），只差推到远端。
+本地仓库**已经建好并打好 tag 了**（`v1.5.9`，工作区干净），只差推到远端。
 
 **第一步：在 github.com 新建一个空仓库**（不要勾 README / .gitignore / license），名字建议 `QuestChainTip`。
 
@@ -150,7 +150,7 @@ cd E:/AI/wowaddones/QuestChainTip
 
 git remote add origin https://github.com/<你的账号>/QuestChainTip.git
 git push -u origin main
-git push origin v1.5.8
+git push origin v1.5.9
 ```
 
 > 如果 `git push -u origin main` 报 `src refspec main does not match`，说明当前分支叫 `master`，
@@ -160,10 +160,10 @@ git push origin v1.5.8
 
 网页上 **Releases → Draft a new release**：
 
-- Tag：选已有的 `v1.5.8`（别新建）
-- Title：`Quest Chain Tip 1.5.8`
-- 描述：整个文件复制 `docs/release-notes-1.5.8.md`（中英双语，已写好）
-- 附件：上传 `dist/QuestChainTip-1.5.8.zip`
+- Tag：选已有的 `v1.5.9`（别新建）
+- Title：`Quest Chain Tip 1.5.9`
+- 描述：整个文件复制 `docs/release-notes-1.5.9.md`（中英双语，已写好）
+- 附件：上传 `dist/QuestChainTip-1.5.9.zip`
 - 发布
 
 发完之后这个 Release 的下载链接就是**唯一真源**，后面新手盒子 / 网易DD / NGA 帖子里都可以链它：
@@ -176,9 +176,9 @@ https://github.com/<你的账号>/QuestChainTip/releases/latest
 
 ```bash
 gh repo create QuestChainTip --public --source=. --push
-gh release create v1.5.8 dist/QuestChainTip-1.5.8.zip \
-  --title "Quest Chain Tip 1.5.8" \
-  --notes-file docs/release-notes-1.5.8.md
+gh release create v1.5.9 dist/QuestChainTip-1.5.9.zip \
+  --title "Quest Chain Tip 1.5.9" \
+  --notes-file docs/release-notes-1.5.9.md
 ```
 
 ### 5. Wago.io（国外，最好过）
@@ -197,7 +197,7 @@ AtlasLoot Forever 也标着 `1.60.1+1`。所以 `16001` 会被精确解析成 1.
 - Game `World of Warcraft` · 名称 `Quest Chain Tip` · 分类 `Quests & Leveling`（附加 `Map & Minimap`、`Tooltip`）
 - 头像用 `docs/icon-512.png`（CurseForge 要求 ≥400×400，128 那个会被拉糊）
 - License `MIT` · 描述粘 `docs/listing-en.md`（编辑器先切 Markdown）
-- 上传 `dist/QuestChainTip-1.5.8.zip`，Release Type `Release`，Game Versions 勾 **`1.60.1`**
+- 上传 `dist/QuestChainTip-1.5.9.zip`，Release Type `Release`，Game Versions 勾 **`1.60.1`**
 - Relations 里挂 Required Dependency → Questie（Project ID `334372`）
 
 完整逐字段清单见 **[`curseforge-upload.md`](curseforge-upload.md)**。
