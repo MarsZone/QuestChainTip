@@ -113,32 +113,49 @@ QuestChainTip/Media/QuestChainTip.tga
 正文 = `docs/listing-zh.md` 的详细说明 + 截图 + zip 附件。
 把「已接任务看不到后续链」这个痛点写在第一段，这是这个插件唯一的卖点。
 
-### 4. GitHub
+### 4. GitHub（单一真源，先发这个）
+
+本地仓库**已经建好并打好 tag 了**（`v1.5.8`，工作区干净），只差推到远端。
+
+**第一步：在 github.com 新建一个空仓库**（不要勾 README / .gitignore / license），名字建议 `QuestChainTip`。
+
+**第二步：推上去**
 
 ```bash
 cd E:/AI/wowaddones/QuestChainTip
 
-# 只把插件本体和文档纳入版本管理，dist/ 是产物不用提交
-cat > .gitignore <<'EOF'
-dist/
-__pycache__/
-*.pyc
-EOF
-
-git init
-git add .
-git commit -m "Quest Chain Tip 1.5.8"
-git branch -M main
 git remote add origin https://github.com/<你的账号>/QuestChainTip.git
 git push -u origin main
+git push origin v1.5.8
 ```
 
-然后 **Releases → Draft a new release**：
+> 如果 `git push -u origin main` 报 `src refspec main does not match`，说明当前分支叫 `master`，
+> 先 `git branch -M main` 再推。
 
-- Tag：`v1.5.8`（和 `toc` 版本号一致）
+**第三步：建 Release**
+
+网页上 **Releases → Draft a new release**：
+
+- Tag：选已有的 `v1.5.8`（别新建）
 - Title：`Quest Chain Tip 1.5.8`
-- 描述：贴 `CHANGELOG.md` 里 1.5.8 那一段
+- 描述：整个文件复制 `docs/release-notes-1.5.8.md`（中英双语，已写好）
 - 附件：上传 `dist/QuestChainTip-1.5.8.zip`
+- 发布
+
+发完之后这个 Release 的下载链接就是**唯一真源**，后面新手盒子 / 网易DD / NGA 帖子里都可以链它：
+
+```
+https://github.com/<你的账号>/QuestChainTip/releases/latest
+```
+
+**装了 gh CLI 的话可以一条命令搞定**（可选）：
+
+```bash
+gh repo create QuestChainTip --public --source=. --push
+gh release create v1.5.8 dist/QuestChainTip-1.5.8.zip \
+  --title "Quest Chain Tip 1.5.8" \
+  --notes-file docs/release-notes-1.5.8.md
+```
 
 ### 5. Wago.io
 
