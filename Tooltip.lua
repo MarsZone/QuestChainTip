@@ -14,7 +14,7 @@ QCT.Tooltip = T
 
 local PANEL_NAME = "QuestChainTipPanel"
 local TEXT_WIDTH = 330      -- 文本列宽
-local PAD_X, PAD_Y = 12, 10
+local PAD_X, PAD_Y = 10, 8
 local LINE_HEIGHT = 15
 local MAX_ROWS = 42
 
@@ -84,8 +84,7 @@ end
 local fontPath, fontSize, fontFlags
 
 local function GetFont()
-    if fontPath then return fontPath, fontSize, fontFlags end
-
+    -- 不缓存：玩家换字体/改字号后不用重载插件也能跟上
     local source = _G["GameTooltipTextLeft1"]
     if source and source.GetFont then
         local ok, path, size, flags = pcall(source.GetFont, source)
@@ -134,6 +133,32 @@ function T:CreatePanel()
     return panel
 end
 
+---把面板的底色和边框色对齐 GameTooltip。
+---为什么：面板和任务图标提示是上下紧挨着显示的两个框，底色/边框只要有一点不一样，
+---看起来就是「两个软件拼在一起」。原生 tooltip 的样式还会被 ElvUI / Tiptac 这类美化改掉，
+---所以这里每次都现读一次，不做缓存。
+function T:SyncPanelStyle()
+    local panel = self.panel
+    local tip = _G.GameTooltip
+    if not panel or not tip then return end
+
+    if panel.SetBackdropColor and tip.GetBackdropColor then
+        local ok, r, g, b, a = pcall(tip.GetBackdropColor, tip)
+        -- 有的美化插件把 GameTooltip 设成全透明（反正它不用这个框），
+        -- 盲目跟随会让我们也变透明，低于 0.3 就保留默认值
+        if ok and r and a and a >= 0.3 then
+            panel:SetBackdropColor(r, g, b, a)
+        end
+    end
+
+    if panel.SetBackdropBorderColor and tip.GetBackdropBorderColor then
+        local ok, r, g, b, a = pcall(tip.GetBackdropBorderColor, tip)
+        if ok and r then
+            panel:SetBackdropBorderColor(r, g, b, a or 1)
+        end
+    end
+end
+
 -- 安全调用：某些客户端（或测试桩）缺少个别 FontString 方法，不能因此整个面板炸掉
 local function SafeCall(obj, method, ...)
     local fn = obj and obj[method]
@@ -152,12 +177,18 @@ local function AcquireRow(panel, index)
     SafeCall(row.left, "SetJustifyH", "LEFT")
     SafeCall(row.left, "SetJustifyV", "TOP")
     SafeCall(row.left, "SetWordWrap", true)
+    -- 原生 tooltip 的文字带 1px 黑影。不加阴影的话同样的字号看着更粗更亮，
+    -- 和上面的任务提示放在一起对比很明显。
+    SafeCall(row.left, "SetShadowColor", 0, 0, 0, 1)
+    SafeCall(row.left, "SetShadowOffset", 1, -1)
 
     row.right = row:CreateFontString(nil, "ARTWORK")
     SafeCall(row.right, "SetFont", path, size, flags)
     SafeCall(row.right, "SetJustifyH", "RIGHT")
     SafeCall(row.right, "SetJustifyV", "TOP")
     SafeCall(row.right, "SetWordWrap", false)
+    SafeCall(row.right, "SetShadowColor", 0, 0, 0, 1)
+    SafeCall(row.right, "SetShadowOffset", 1, -1)
 
     panel.rows[index] = row
     return row
@@ -183,8 +214,6 @@ function T:Layout(content)
 
         local rightWidth = 0
         if item.right and item.right ~= "" then
-            row.right:ClearAllPoints()
-            row.right:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD_X, y)
             row.right:SetTextColor(item.r or 1, item.g or 1, item.b or 1)
             row.right:SetText(item.right)
             row.right:Show()
@@ -194,13 +223,43 @@ function T:Layout(content)
             row.right:Hide()
         end
 
-        local leftWidth = TEXT_WIDTH - rightWidth - 6
-        if leftWidth < 60 then leftWidth = 60 end
-        row.left:SetWidth(leftWidth)
+        -- 先按满宽量一次，拿到「不换行时左边这行要多宽」。
+        -- 之前直接把左边挤到 TEXT_WIDTH - rightWidth，任务名一长就被切成两行：
+        -- 最后一个字掉到下一行，又被面板高度裁掉，看着像排版错乱
+        -- （比如「抢救数据」显示成「抢救数」，底边框外露出一个「据」）。
+        row.left:SetWidth(TEXT_WIDTH)
+        local natural = row.left:GetStringWidth() or 0
+        local stacked = rightWidth > 0 and (natural + rightWidth + 6) > TEXT_WIDTH
 
-        local height = row.left:GetStringHeight() or 0
-        if height <= 0 then height = LINE_HEIGHT end
-        y = y - height
+        local height
+        if stacked then
+            -- 一行放不下：任务名独占一行，右侧信息降到下一行右对齐
+            local h1 = row.left:GetStringHeight() or 0
+            if h1 <= 0 then h1 = LINE_HEIGHT end
+
+            row.right:ClearAllPoints()
+            row.right:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD_X, y - h1)
+
+            local h2 = row.right:GetStringHeight() or 0
+            if h2 <= 0 then h2 = LINE_HEIGHT end
+            height = h1 + h2
+        else
+            local leftWidth = TEXT_WIDTH - rightWidth - 6
+            if leftWidth < 60 then leftWidth = 60 end
+            row.left:SetWidth(leftWidth)
+
+            if rightWidth > 0 then
+                row.right:ClearAllPoints()
+                row.right:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD_X, y)
+            end
+
+            height = row.left:GetStringHeight() or 0
+            if height <= 0 then height = LINE_HEIGHT end
+        end
+
+        -- GetStringHeight 不含字体下沿的行距，逐行累加会让面板底部越来越贴边
+        -- （顶部留 10px、底部只剩 2~3px，最后一行几乎压住边框）。每行补 1px。
+        y = y - height - 1
     end
 
     -- 收起多余的行
@@ -212,7 +271,8 @@ function T:Layout(content)
     end
 
     panel:SetWidth(TEXT_WIDTH + PAD_X * 2)
-    panel:SetHeight(math.max(40, -y + PAD_Y))
+    -- 底部多留 3px：行高累加本身有细微误差，且底边框的下沿需要呼吸空间
+    panel:SetHeight(math.max(40, -y + PAD_Y + 3))
 end
 
 ---把面板放在 GameTooltip 旁边：优先下方，其次右侧、左侧，最后居中。
@@ -296,6 +356,7 @@ end
 
 function T:Build(questId)
     local panel = self:CreatePanel()
+    self:SyncPanelStyle()
     local db = QCT.db
     -- 行内面板始终按普通深度渲染
     local shift = false
@@ -834,6 +895,10 @@ function T:Refresh(force)
         return
     end
     state.owner = owner
+    -- 记下最近一次悬停的地图目标：鼠标轻微一动，GameTooltip 会先隐藏再重设 owner，
+    -- 正好在那个瞬间按 Shift 就会被当成「没悬停任何东西」。这里留个兜底。
+    self.owner = owner
+    self.ownerTime = GetTime()
 
     -- 先识别任务：面板关着也要识别，因为地图上「按住 Shift」要靠它
     if not state.questId then
@@ -1030,16 +1095,27 @@ function T:OnModifierChanged()
     if not IsShiftKeyDown() then return end
 
     local tip = _G.GameTooltip
-    if not tip or not (tip.IsShown and tip:IsShown()) then return end
+    local shown = tip ~= nil and tip.IsShown ~= nil and tip:IsShown()
 
-    local owner = CurrentOwner(tip)
-    if owner then self.owner = owner end
+    local owner
+    if shown then
+        local ok, value = pcall(CurrentOwner, tip)
+        if ok then owner = value end
+    end
+
+    if owner then
+        self.owner = owner
+        self.ownerTime = GetTime()
+    elseif self.owner and self.ownerTime and (GetTime() - self.ownerTime) < 5 then
+        -- tooltip 刚被隐藏（鼠标抖动/重设 owner），用最近一次的目标继续
+        owner = self.owner
+    end
 
     local questId = (self.state and self.state.questId) or self.lastQuestId
 
     -- 就算 OnShow 钩子没装上（state 是 nil），Shift 这条路也要能用：
     -- 直接现查一次任务 ID，不依赖任何钩子。
-    if not questId then
+    if not questId and tip and shown then
         local ok, id = pcall(self.DetectQuestId, self, tip)
         if ok and id then
             questId = id
@@ -1048,13 +1124,15 @@ function T:OnModifierChanged()
         end
     end
 
-    QCT.Log:Add("shift", "Shift | 是地图图标:", IsMapQuestIcon(owner) and "是" or "否",
-        "| 帧:", SafeName(owner) or "<无名>",
+    QCT.Log:Add("shift", "Shift 触发 | tooltip:", shown and "显示" or "隐藏",
+        "| 目标:", SafeName(owner) or "<无>",
+        "| 是地图图标:", owner and (IsMapQuestIcon(owner) and "是" or "否") or "?",
+        "| 任务:", tostring(questId),
         "| Questie图标类型:", tostring(QuestieIconKind(owner)),
-        "| 在地图帧里:", IsOnWorldMap(owner) and "是" or "否",
+        "| 在地图帧里:", owner and (IsOnWorldMap(owner) and "是" or "否") or "?",
         "| 世界地图开着:", IsWorldMapOpen() and "是" or "否",
-        "| 任务日志行:", IsQuestLogButton(owner) and "是" or "否",
-        "| 链:", self:DescribeFrameChain(owner))
+        "| 任务日志行:", owner and (IsQuestLogButton(owner) and "是" or "否") or "?",
+        "| 链:", owner and self:DescribeFrameChain(owner) or "<无>")
 
     if not IsMapQuestIcon(owner) then
         ExplainNoWindow(owner, questId)
@@ -1130,12 +1208,47 @@ function T:Enable()
         hooksecurefunc(GameTooltip, "SetOwner", function(tip, owner)
             T.owner = owner
             local state = T.state
-            if state and state.tip == tip then
-                state.questId = nil
+            if not state or state.tip ~= tip then
+                -- 有的客户端 / tooltip 美化插件不触发 GameTooltip 的 OnShow，
+                -- state 就永远是 nil，Refresh 第一句直接 return，表现成「完全不工作」。
+                -- 这里补建一次，让 SetOwner 自己就能撑起识别。
+                state = { tip = tip, questId = nil }
+                T.state = state
             end
+            state.questId = nil
             QCT.Log:Add("setowner", "owner:", SafeName(owner) or "<unnamed>",
                 "| 父级:", SafeName(select(2, pcall(function() return owner and owner:GetParent() end))) or "?",
                 "| miniMapIcon:", tostring(select(2, pcall(function() return owner and owner.miniMapIcon end))))
+            ScheduleCheck()
+        end)
+    end)
+
+    -- 最后一道兜底：每 0.12 秒比对一次 GameTooltip 的持有者。
+    -- 有的 tooltip 美化插件（Tiptac / ElvUI / TinyTooltip 之类）会接管 GameTooltip，
+    -- 既可能吞掉 OnShow，也可能让 hooksecurefunc 失效，那时上面两个钩子全都收不到信号。
+    -- 轮询不看事件，只看「持有者变了没有」，钩子全挂也不影响这一条。
+    TryInstall("轮询兜底", function()
+        local ticker = CreateFrame("Frame")
+        local acc, lastOwner = 0, nil
+        ticker:SetScript("OnUpdate", function(_, dt)
+            acc = acc + dt
+            if acc < 0.12 then return end
+            acc = 0
+            local tip = _G.GameTooltip
+            if not tip then return end
+            local owner = tip.GetOwner and tip:GetOwner()
+            if owner == lastOwner then return end
+            lastOwner = owner
+            if not owner then return end
+            if not (tip.IsShown and tip:IsShown()) then return end
+            T.owner = owner
+            T.ownerTime = GetTime()
+            if not T.state or T.state.tip ~= tip then
+                T.state = { tip = tip, questId = nil }
+            else
+                T.state.questId = nil
+            end
+            QCT.Log:Add("poll", "轮询发现持有者变化:", SafeName(owner) or "<unnamed>")
             ScheduleCheck()
         end)
     end)

@@ -9,7 +9,8 @@
 | 物料 | 路径 | 说明 |
 |---|---|---|
 | 发布包 | `dist/QuestChainTip-1.5.8.zip` | 45.8 KB，顶层是 `QuestChainTip/` 文件夹，`toc` 在文件夹根部 |
-| 工程图标 | `docs/icon-128.png` | 128×128 PNG，CurseForge / Wago 的工程图标要求这个尺寸 |
+| 工程图标 | `docs/icon-128.png` | 128×128 PNG，Wago 用这个 |
+| 大图标 | `docs/icon-512.png` | 512×512 PNG，CurseForge 项目头像（要求 ≥400×400） |
 | 小图标 | `docs/icon-64.png` | 64×64，README / 帖子配图用 |
 | 游戏内图标 | `Media/QuestChainTip.tga` | 已打进包，`toc` 的 `IconTexture` 指向它 |
 | 中文文案 | `docs/listing-zh.md` | 简介 + 详细说明 + 标签 + 截图建议，可直接粘 |
@@ -17,16 +18,15 @@
 | 更新日志 | `CHANGELOG.md` | 建议每次发版把当前版本那一段贴到平台 |
 | 许可证 | `LICENSE` | MIT，已打进包 |
 
-**截图还没做**，平台一般要 3–5 张。按 `docs/listing-zh.md` 最后的顺序拍：
+**三张截图已做好**，1280×720、16:9，左边文案右边实机截图，直接传，不用再裁：
 
-1. 世界地图上悬停任务图标 → 补全面板
-2. 世界地图上按住 Shift → 整条链详情窗
-3. 详情窗里物品名悬停 → 物品提示
-4. 设置界面
-5. 对比图（Questie 原生 vs 本插件）
+| 文件 | 内容 |
+|---|---|
+| `docs/screenshots/01-hover-panel.png` | 世界地图悬停任务图标 → 补全面板（列表页封面用这张） |
+| `docs/screenshots/02-chain-window.png` | 按住 Shift → 整条链详情窗 |
+| `docs/screenshots/03-item-tooltip.png` | 详情窗里悬停物品 → 物品提示 |
 
-> 拍图小技巧：用 `/console screenshotFormat png`，`PrintScreen` 存到 `World of Warcraft\_forever_\Screenshots\`。
-> 建议裁掉黑边，统一成 16:9，第一张最重要——它就是列表页的封面。
+> 需要重做时跑 `python tools/make_screenshots.py`，原图在 `docs/screenshots/src/`。
 
 ---
 
@@ -72,17 +72,18 @@ QuestChainTip/Media/QuestChainTip.tga
 | **3** | **新手盒子** | 国内永久60/怀旧服玩家真正聚集的地方，流量在这儿 | zip + 文案 + 截图 + 依赖 |
 | **4** | **网易UU / DD** | 第二个国内分发点，同一份 zip 和文案直接复用 | 同上 |
 | **5** | NGA 插件区 | 发帖 + 附件，收 bug 反馈最快；正文里放 GitHub 链接 | 帖子 |
-| **6** | Wago.io | 国外，支持自定义 Interface，比 CurseForge 好过 | zip + 英文文案 + 128 图标 |
-| **7** | CurseForge | 见下面「注意」，Interface 16001 可能被判不兼容 | 最后再试 |
+| **6** | Wago.io | 国外，支持自定义 Interface，5 分钟传完 | zip + 英文文案 + 128 图标 |
+| **7** | **CurseForge** | 国外流量最大，被 WowUp / CurseBreaker 收录；**Forever 分支已确认可用** | zip + 英文文案 + 512 图标 |
 
-> **一句话**：GitHub 先发拿链接 → 拍截图 → 新手盒子 → 网易UU → NGA。
+> **一句话**：GitHub 先发拿链接 → 拍截图 → 新手盒子 → 网易UU → NGA → Wago → CurseForge。
 > GitHub 之所以排第一不是因为它面向国内玩家，而是它**不用审核、不用截图**，
 > 可以立刻把「版本 1.5.8 就是这个 zip」这件事钉死。
 
-> ⚠️ **关于 CurseForge**：它的版本识别是读 `toc` 的 `## Interface: 16001`，
-> 而 16001 不是暴雪官方版本号（官方 Classic Era 是 115xx 这一档）。
-> 上传后大概率会被标成「不支持的版本」或需要手动指定 Game Version。
-> 如果你的用户主要是永久60 客户端，**优先国内盒子 + GitHub + Wago**，CurseForge 可以最后再说。
+> ✅ **关于 CurseForge（修正早前判断）**：它的版本识别确实读 `toc` 的 `## Interface: 16001`，
+> 但 CurseForge 早就有 **Forever** 分支专门对应 1.60.x：
+> Questie（ID 334372）的 Flavors 里列着 `Forever`，Game Versions 第一项就是 `1.60.1`；
+> AtlasLoot Forever 的文件也标着 `1.60.1+1`。
+> 所以 16001 会被精确解析成 1.60.1，**不会卡**。逐字段清单见 `docs/curseforge-upload.md`。
 
 ---
 
@@ -185,11 +186,23 @@ gh release create v1.5.8 dist/QuestChainTip-1.5.8.zip \
 New Addon → 填名称 → 上传同一份 zip → 版本号会自动从 `toc` 读出来 → 贴英文文案 → 传图标和截图。
 Wago 允许自定义 game version，不会因为 `16001` 卡住，是国外最省事的一个。
 
-### 6. CurseForge（国外流量最大，但可能卡版本）
+### 6. CurseForge（国外流量最大，**Forever 分支可用**）
 
-New Project → 类型 **World of Warcraft** → 上传 zip → 手动把 Game Version 勾到 Classic Era →
-贴 `docs/listing-en.md` → 传 `docs/icon-128.png` → 传截图 → License 选 MIT。
-如果提示版本不兼容，忽略即可，玩家仍能手动安装。
+⚠️ 这里修正一个早前的错误判断：**CurseForge 不会因为 `Interface: 16001` 卡住**。
+它早就有 **Forever** 分支（`gameVersionTypeId=88568`），Questie 自己的 Game Versions 第一项就是 `1.60.1`，
+AtlasLoot Forever 也标着 `1.60.1+1`。所以 `16001` 会被精确解析成 1.60.1，落到 Forever 上。
+
+入口：`curseforge.com` 登录 → 头像 → **Author Dashboard** → **Create Project**
+
+- Game `World of Warcraft` · 名称 `Quest Chain Tip` · 分类 `Quests & Leveling`（附加 `Map & Minimap`、`Tooltip`）
+- 头像用 `docs/icon-512.png`（CurseForge 要求 ≥400×400，128 那个会被拉糊）
+- License `MIT` · 描述粘 `docs/listing-en.md`（编辑器先切 Markdown）
+- 上传 `dist/QuestChainTip-1.5.8.zip`，Release Type `Release`，Game Versions 勾 **`1.60.1`**
+- Relations 里挂 Required Dependency → Questie（Project ID `334372`）
+
+完整逐字段清单见 **[`curseforge-upload.md`](curseforge-upload.md)**。
+
+> **不要为了传 CurseForge 去改 toc 里的 16001。** 改了反而和无限服客户端对不上。
 
 ### 7. WoWInterface（国外老站）
 
@@ -237,6 +250,7 @@ cp -f *.lua *.toc "F:/Wow/World of Warcraft/_forever_/Interface/AddOns/QuestChai
 |---|---|
 | GitHub | 打完包建一个新 Release（tag `v1.5.9`），附件换成新 zip |
 | Wago | `addons.wago.io` → 头像 → My Addons → 点插件 → `Upload New Version` → 传新 zip |
+| CurseForge | Author Dashboard → 项目 → Files → `Upload File` → 传新 zip，Release Type `Release`，Game Versions 勾 `1.60.1` |
 | 新手盒子 | 创作者中心 → 我的插件 → 上传新版本 → 传新 zip |
 | NGA | 编辑原帖，改标题里的版本号，附件换新 zip |
 
