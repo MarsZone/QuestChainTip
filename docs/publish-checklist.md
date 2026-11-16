@@ -63,16 +63,21 @@ QuestChainTip/Media/QuestChainTip.tga
 
 ---
 
-## 三、渠道怎么选
+## 三、发布顺序（照这个顺序做）
 
-| 渠道 | 面向 | 建议 |
-|---|---|---|
-| **新手盒子** | 国内，永久60/怀旧服玩家最多 | **首选**，先发这里 |
-| **网易DD** | 国内 | 第二发，同一份 zip 直接传 |
-| **NGA 插件区** | 国内硬核玩家 | 发帖 + 附件，回复里收集问题最快 |
-| **GitHub Release** | 国外 + 想留源码 | 必做，后面所有渠道都可以链到这里 |
-| **Wago.io** | 国外 | 支持自定义 Interface，比 CurseForge 好过 |
-| **CurseForge** | 国外最大 | 见下面「注意」，Interface 16001 可能被判不兼容 |
+| 顺序 | 渠道 | 为什么排这里 | 需要什么 |
+|---|---|---|---|
+| **1** | **GitHub Release** | 不需要审核，几分钟就能拿到一个固定链接；后面所有渠道都链它，以后修 bug 只改这一处 | 只要 zip + 发布说明，**不需要截图** |
+| **2** | 截图 | 新手盒子/UU 都要求 3–5 张，没有就过不了审 | 进游戏拍，见上一节 |
+| **3** | **新手盒子** | 国内永久60/怀旧服玩家真正聚集的地方，流量在这儿 | zip + 文案 + 截图 + 依赖 |
+| **4** | **网易UU / DD** | 第二个国内分发点，同一份 zip 和文案直接复用 | 同上 |
+| **5** | NGA 插件区 | 发帖 + 附件，收 bug 反馈最快；正文里放 GitHub 链接 | 帖子 |
+| **6** | Wago.io | 国外，支持自定义 Interface，比 CurseForge 好过 | zip + 英文文案 + 128 图标 |
+| **7** | CurseForge | 见下面「注意」，Interface 16001 可能被判不兼容 | 最后再试 |
+
+> **一句话**：GitHub 先发拿链接 → 拍截图 → 新手盒子 → 网易UU → NGA。
+> GitHub 之所以排第一不是因为它面向国内玩家，而是它**不用审核、不用截图**，
+> 可以立刻把「版本 1.5.8 就是这个 zip」这件事钉死。
 
 > ⚠️ **关于 CurseForge**：它的版本识别是读 `toc` 的 `## Interface: 16001`，
 > 而 16001 不是暴雪官方版本号（官方 Classic Era 是 115xx 这一档）。
@@ -157,15 +162,31 @@ gh release create v1.5.8 dist/QuestChainTip-1.5.8.zip \
   --notes-file docs/release-notes-1.5.8.md
 ```
 
-### 5. Wago.io
+### 5. Wago.io（国外，最好过）
 
 New Addon → 填名称 → 上传同一份 zip → 版本号会自动从 `toc` 读出来 → 贴英文文案 → 传图标和截图。
+Wago 允许自定义 game version，不会因为 `16001` 卡住，是国外最省事的一个。
 
-### 6. CurseForge（可选）
+### 6. CurseForge（国外流量最大，但可能卡版本）
 
 New Project → 类型 **World of Warcraft** → 上传 zip → 手动把 Game Version 勾到 Classic Era →
 贴 `docs/listing-en.md` → 传 `docs/icon-128.png` → 传截图 → License 选 MIT。
 如果提示版本不兼容，忽略即可，玩家仍能手动安装。
+
+### 7. WoWInterface（国外老站）
+
+上传流程和 CurseForge 类似，审核较慢但会长期挂着，属于「放着不用管」的渠道。
+
+### 8. 社区曝光（不是托管，但决定有没有人看见）
+
+- **Reddit**：`r/wowaddons`（发插件首选）、`r/classicwow`（附截图，标题写清解决什么问题）
+- **Discord**：Classic Era / 私服相关的插件频道，发一条带 GitHub 链接的短介绍
+- **Wago 的 addon 页**自带评论，比 CurseForge 活跃
+
+> ⚠️ **国外发之前先想清楚一件事**：插件界面目前**只有中文**。
+> 国外玩家装了会看到「悬停面板」「后续任务链」这种中文标签，体验是断的。
+> 如果只是想「有个海外入口」，GitHub + Wago 足够；
+> 想真让国外玩家用，建议先做英文 UI（`GetLocale()` 分流），再发 CurseForge 和 Reddit。
 
 ---
 
