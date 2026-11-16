@@ -1,0 +1,119 @@
+Wago Create Addon —— 照顺序复制粘贴
+====================================
+
+下面每一段对应表单里的一个字段。用记事本打开，选中一段复制，粘进对应框。
+
+
+------------------------------------------------------------
+[1] Display Name
+------------------------------------------------------------
+Quest Chain Tip
+
+
+------------------------------------------------------------
+[2] Summary  （一句话，限 200 字符）
+------------------------------------------------------------
+Questie shows description, rewards and follow-up chains only for quests you haven't accepted. This adds the same for quests already in your log. Hover on the world map, hold Shift for the full chain.
+
+
+------------------------------------------------------------
+[3] Description  （Markdown，编辑器切到 Write 再粘）
+------------------------------------------------------------
+### The gap it fills
+
+Questie shows description, rewards and the follow-up chain only for quests you have **not** accepted yet. Once a quest is in your log, hovering it gives you objectives and nothing else — you cannot tell how many steps remain, what they reward, or whether the chain sends you into a dungeon.
+
+Quest Chain Tip fills that gap for every quest: available, in progress, and completed.
+
+### Hover panel on the world map
+
+- Quest description (configurable line count)
+- Rewards: XP, money, items (quality coloured), reputation
+- Follow-up chain (configurable depth, default 3)
+- Prerequisites
+
+Shown only on world map quest markers by default; can be set to "off" or "everywhere". It never shows on the minimap, never in the chat frame (so Shift-click quest linking still works), and never in the quest log — Shift-click there stays the native "link to chat" behaviour.
+
+### Hold Shift on the world map for the chain window
+
+One card per quest in the chain:
+
+- Objectives
+- Rewards — XP, money, items. Items are quality coloured, hover for the item tooltip, click to open
+- Quest description text
+- Where to accept / hand in (NPC name + zone)
+- Dungeon / raid / elite flag
+- State: available / in progress / completed
+
+Completed quests are collapsed by default; one button in the top-right expands everything. The window is draggable and scrollable, `Esc` closes it.
+
+### Notes
+
+- Requires Questie and QuestieDB (they ship the quest database; this addon does not redistribute it)
+- Client: WoW Classic "Forever" / Era, Interface 16001
+- Nothing is appended to the system tooltip — everything is drawn on its own frame, so there is no flicker
+- Item rewards also work for quests you have not accepted: the addon scans the QuestieDB item table (`questRewards`) once per session and builds a reverse quest → item index
+
+### Commands
+
+`/qct` settings · `/qct depth 5` · `/qct detail` · `/qct explain` (chat diagnostics, off by default) · `/qct why` and `/qct log` (attach these when reporting a problem)
+
+### Localisation
+
+Quest names, NPC names and item names follow your client locale via Questie. The addon's own labels are currently Chinese only; an English UI pass is planned.
+
+### Links
+
+Source and issue tracker: https://github.com/MarsZone/QuestChainTip
+
+
+------------------------------------------------------------
+[4] 下拉框 / 选项类字段
+------------------------------------------------------------
+
+Category            →  Quests（没有就选 Utility）
+Game                →  World of Warcraft
+Game Version        →  Classic Era（如果列表里没有，选最接近的 Classic 系列；
+                       再不行就留空或选 Other，不要为了匹配去改 toc）
+Visibility          →  Public（重要，Private 别人打不开）
+
+
+------------------------------------------------------------
+[5] 需要上传的文件（必须手动点，路径直接粘到文件选择框）
+------------------------------------------------------------
+
+Addon file (zip)
+E:\AI\wowaddones\QuestChainTip\dist\QuestChainTip-1.5.8.zip
+
+Icon
+E:\AI\wowaddones\QuestChainTip\docs\icon-128.png
+
+Screenshot 1
+E:\AI\wowaddones\QuestChainTip\docs\screenshots\01-hover-panel.png
+
+Screenshot 2
+E:\AI\wowaddones\QuestChainTip\docs\screenshots\02-chain-window.png
+
+Screenshot 3
+E:\AI\wowaddones\QuestChainTip\docs\screenshots\03-item-tooltip.png
+
+
+------------------------------------------------------------
+[6] 其他可选字段
+------------------------------------------------------------
+
+Slug / URL          →  quest-chain-tip（留空则由名称自动生成）
+Homepage            →  https://github.com/MarsZone/QuestChainTip
+Source / Repository →  https://github.com/MarsZone/QuestChainTip
+License             →  MIT
+Tags                →  quests, quest chain, questie, classic, addon, rewards
+Donate              →  留空
+
+
+------------------------------------------------------------
+[7] 提交后
+------------------------------------------------------------
+
+1. 复制地址栏链接，形如 https://addons.wago.io/addons/quest-chain-tip
+2. 打开该链接确认：页面能看到描述、三张截图、下载按钮
+3. 把链接填进新手盒子入驻申请的「已发布渠道」
