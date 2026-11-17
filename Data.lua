@@ -14,6 +14,11 @@ D.mod = mod
 
 local pcall, type, tostring, tonumber = pcall, type, tostring, tonumber
 
+-- 前置声明：GetDescription 等函数定义在 SafeString 实现之前，
+-- 若这里不声明，那些函数里的 SafeString 会被当成全局变量（nil），一调用就报
+-- "attempt to call a nil value"。真正的实现在下面「奖励接口探测」之前。
+local SafeString
+
 --------------------------------------------------------------------------------
 -- 初始化：拿到 Questie 的模块
 --------------------------------------------------------------------------------
@@ -321,7 +326,7 @@ local QUALITY_COLORS = {
 
 ---确认一个值是可以安全参与字符串拼接的普通字符串。
 ---这个客户端的 secret value 一参与拼接就抛错，所以先 pcall 试一次。
-local function SafeString(value)
+function SafeString(value)
     if type(value) ~= "string" then return nil end
     local ok, text = pcall(string.format, "%s", value)
     if not ok or type(text) ~= "string" then return nil end
@@ -607,6 +612,8 @@ end
 ---@param onDone function?
 ---@return boolean 是否已启动（或已经在跑）
 function D:BuildItemRewardIndex(onDone)
+    -- 已经确认过不可用：不再重试，也不再往诊断日志里刷同样的行
+    if rewardIndex == false then return false end
     if type(rewardIndex) == "table" and not scanState then
         if onDone then pcall(onDone) end
         return true
@@ -615,9 +622,15 @@ function D:BuildItemRewardIndex(onDone)
 
     local itemDB = itemEntity()
     if not itemDB or type(itemDB.GetAllIds) ~= "function" or type(itemDB.questRewards) ~= "function" then
-        QCT.Log:Add("rewards", "物品表反查不可用 | LibQuestieDB.Item:",
-            type(itemDB), "| GetAllIds:", type(itemDB and itemDB.GetAllIds),
-            "| questRewards:", type(itemDB and itemDB.questRewards))
+        rewardIndex = false
+        -- 分两种：完全没装 QuestieDB 插件（正常，绝大多数用户如此）与装了但接口对不上（真异常）
+        if not itemDB then
+            QCT.Log:Add("rewards", "未安装 QuestieDB 独立插件，跳过物品反查（正常，不影响任务链与奖励金额）")
+        else
+            QCT.Log:Add("rewards", "物品表反查不可用 | 实体:",
+                type(itemDB), "| GetAllIds:", type(itemDB and itemDB.GetAllIds),
+                "| questRewards:", type(itemDB and itemDB.questRewards))
+        end
         return false
     end
 

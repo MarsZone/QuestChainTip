@@ -912,8 +912,8 @@ function T:Refresh(force)
     end
     self.lastQuestId = state.questId
 
-    -- 地图上按住 Shift：直接开详情窗，不弹面板
-    if IsShiftKeyDown() and IsMapQuestIcon(owner) and QCT.Window then
+    -- 地图上按住 Shift：直接开详情窗，不弹面板（地图已经关掉时不许开，见 OnModifierChanged）
+    if IsShiftKeyDown() and IsMapQuestIcon(owner) and IsWorldMapOpen() and QCT.Window then
         QCT.Log:Add("shift", "开详情窗 | 任务:", state.questId, "| 链:", self:DescribeFrameChain(owner))
         self:Hide()
         local window = QCT.Window
@@ -1140,6 +1140,15 @@ function T:OnModifierChanged()
         return
     end
 
+    -- 世界地图已经关掉了：缓存里的 owner 还是关图前那个图标（帧对象还在，只是跟着地图一起不可见了），
+    -- 不拦住的话，玩家按 M 关掉地图后随手再按一下 Shift，就会凭空冒出一个详情窗。
+    if not IsWorldMapOpen() then
+        self.owner = nil
+        self.ownerTime = nil
+        ExplainNoWindow(owner, questId)
+        return
+    end
+
     if not questId then
         ExplainNoWindow(owner, nil)
         return
@@ -1230,11 +1239,27 @@ function T:Enable()
     -- 轮询不看事件，只看「持有者变了没有」，钩子全挂也不影响这一条。
     TryInstall("轮询兜底", function()
         local ticker = CreateFrame("Frame")
-        local acc, lastOwner = 0, nil
+        local acc, lastOwner, lastMapOpen = 0, nil, nil
         ticker:SetScript("OnUpdate", function(_, dt)
             acc = acc + dt
             if acc < 0.12 then return end
             acc = 0
+
+            -- 地图从「开」变「关」：关图前记下的悬停目标当场作废，
+            -- 详情窗也一起收起来 —— 它是「地图上按住 Shift」的产物，
+            -- 地图都关了还飘在屏幕中间，玩家按 M 之后会以为关不掉。
+            local mapOpen = IsWorldMapOpen()
+            if lastMapOpen == true and not mapOpen then
+                T.owner = nil
+                T.ownerTime = nil
+                if T.state then T.state.questId = nil end
+                if QCT.Window and QCT.Window:IsShown() then
+                    pcall(QCT.Window.Close, QCT.Window)
+                end
+                QCT.Log:Add("map", "世界地图已关闭，清空悬停缓存并收起详情窗")
+            end
+            lastMapOpen = mapOpen
+
             local tip = _G.GameTooltip
             if not tip then return end
             local owner = tip.GetOwner and tip:GetOwner()
