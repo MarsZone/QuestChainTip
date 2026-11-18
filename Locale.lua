@@ -83,7 +83,7 @@ local zhTW = {
     ["任务 %s"] = "任務 %s",
 
     -- 截断与提示
-    ["…（在世界地图上按住 Shift 查看完整任务链）"] = "…（在世界地圖上按住 Shift 查看完整任務鏈）",
+    ["…（在世界地图上按住 %s 查看完整任务链）"] = "…（在世界地圖上按住 %s 查看完整任務鏈）",
     ["…（描述较长，已截断）"] = "…（描述較長，已截斷）",
     ["…（条件较多，已截断）"] = "…（條件較多，已截斷）",
     ["已隐藏 %d 个已完成的任务 · 点右上角「显示全部」展开"] = "已隱藏 %d 個已完成的任務 · 點右上角「顯示全部」展開",
@@ -97,10 +97,12 @@ local zhTW = {
 
     -- 设置界面
     ["任务链提示 - 设置"] = "任務鏈提示 - 設定",
-    ["在世界地图上悬停任务图标显示简介，按住 Shift 打开整条任务链详情窗；小地图上不弹"] =
-        "在世界地圖上將滑鼠移到任務圖示顯示簡介，按住 Shift 開啟整條任務鏈詳情視窗；小地圖上不顯示",
+    ["在世界地图上悬停任务图标显示简介，按住 %s 打开整条任务链详情窗；小地图上不弹"] =
+        "在世界地圖上將滑鼠移到任務圖示顯示簡介，按住 %s 開啟整條任務鏈詳情視窗；小地圖上不顯示",
     ["启用插件"] = "啟用插件",
     ["悬停面板"] = "懸停面板",
+    ["详情窗快捷键"] = "詳情視窗快捷鍵",
+    ["不启用"] = "不啟用",
     ["不显示"] = "不顯示",
     ["仅世界地图"] = "僅世界地圖",
     ["全部位置"] = "全部位置",
@@ -170,14 +172,22 @@ local zhTW = {
         "  |cffffff00/qct dump <任務ID>|r - 列印某任務解析結果",
     ["  |cffffff00/qct test|r - 强制画一个测试面板（检查显示是否正常）"] =
         "  |cffffff00/qct test|r - 強制畫一個測試面板（檢查顯示是否正常）",
-    ["  |cffffff00/qct detail <任务ID>|r - 打开任务链详情窗（等价于在地图上按住 Shift）"] =
-        "  |cffffff00/qct detail <任務ID>|r - 開啟任務鏈詳情視窗（等同於在地圖上按住 Shift）",
+    ["  |cffffff00/qct detail <任务ID>|r - 打开任务链详情窗（等价于在地图上按快捷键）"] =
+        "  |cffffff00/qct detail <任務ID>|r - 開啟任務鏈詳情視窗（等同於在地圖上按快捷鍵）",
     ["  |cffffff00/qct rewards <任务ID>|r - 探测该任务的奖励接口，结果写入日志"] =
         "  |cffffff00/qct rewards <任務ID>|r - 探測該任務的獎勵介面，結果寫入日誌",
     ["  |cffffff00/qct why|r - 打印运行状态，排查为什么没显示"] =
         "  |cffffff00/qct why|r - 列印執行狀態，排查為什麼沒顯示",
     ["  |cffffff00/qct trace|r - 打印后台日志（默认一直在记，无需开启）"] =
         "  |cffffff00/qct trace|r - 列印背景日誌（預設一直在記錄，無需開啟）",
+    ["  |cffffff00/qct key <shift|ctrl|alt|none>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
+        "  |cffffff00/qct key <shift|ctrl|alt|none>|r - 詳情視窗快捷鍵（預設 shift，可避開 Questie 的 Shift）",
+    ["用法: /qct key shift|ctrl|alt|none"] = "用法: /qct key shift|ctrl|alt|none",
+    ["详情窗快捷键: %s"] = "詳情視窗快捷鍵: %s",
+    ["  |cffffff00/qct key <shift|ctrl|alt|none>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
+        "  |cffffff00/qct key <shift|ctrl|alt|none>|r - chain window key (default shift; avoids Questie's Shift)",
+    ["用法: /qct key shift|ctrl|alt|none"] = "Usage: /qct key shift|ctrl|alt|none",
+    ["详情窗快捷键: %s"] = "Chain window key: %s",
     ["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"] =
         "  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切換介面語言",
     ["界面语言: %s"] = "介面語言: %s",
@@ -235,7 +245,7 @@ local enUS = {
     ["任务 %s"] = "Quest %s",
 
     -- 截断与提示
-    ["…（在世界地图上按住 Shift 查看完整任务链）"] = "… (hold Shift on the world map for the full chain)",
+    ["…（在世界地图上按住 %s 查看完整任务链）"] = "… (hold %s on the world map for the full chain)",
     ["…（描述较长，已截断）"] = "… (description truncated)",
     ["…（条件较多，已截断）"] = "… (objectives truncated)",
     ["已隐藏 %d 个已完成的任务 · 点右上角「显示全部」展开"] =
@@ -251,10 +261,12 @@ local enUS = {
 
     -- 设置界面
     ["任务链提示 - 设置"] = "Quest Chain Tip - Settings",
-    ["在世界地图上悬停任务图标显示简介，按住 Shift 打开整条任务链详情窗；小地图上不弹"] =
-        "Hover a world map quest marker for the summary panel, hold Shift for the full chain window. Never shown on the minimap.",
+    ["在世界地图上悬停任务图标显示简介，按住 %s 打开整条任务链详情窗；小地图上不弹"] =
+        "Hover a world map quest marker for the summary panel, hold %s for the full chain window. Never shown on the minimap.",
     ["启用插件"] = "Enable addon",
     ["悬停面板"] = "Hover panel",
+    ["详情窗快捷键"] = "Chain window key",
+    ["不启用"] = "Disabled",
     ["不显示"] = "Off",
     ["仅世界地图"] = "World map only",
     ["全部位置"] = "Everywhere",
@@ -324,14 +336,22 @@ local enUS = {
         "  |cffffff00/qct dump <questID>|r - print the parsed data for a quest",
     ["  |cffffff00/qct test|r - 强制画一个测试面板（检查显示是否正常）"] =
         "  |cffffff00/qct test|r - force-draw a test panel (checks rendering)",
-    ["  |cffffff00/qct detail <任务ID>|r - 打开任务链详情窗（等价于在地图上按住 Shift）"] =
-        "  |cffffff00/qct detail <questID>|r - open the chain window (same as holding Shift on the map)",
+    ["  |cffffff00/qct detail <任务ID>|r - 打开任务链详情窗（等价于在地图上按快捷键）"] =
+        "  |cffffff00/qct detail <questID>|r - open the chain window (same as the key on the world map)",
     ["  |cffffff00/qct rewards <任务ID>|r - 探测该任务的奖励接口，结果写入日志"] =
         "  |cffffff00/qct rewards <questID>|r - probe reward APIs, results go to the log",
     ["  |cffffff00/qct why|r - 打印运行状态，排查为什么没显示"] =
         "  |cffffff00/qct why|r - print runtime state, to diagnose why nothing shows",
     ["  |cffffff00/qct trace|r - 打印后台日志（默认一直在记，无需开启）"] =
         "  |cffffff00/qct trace|r - print the background log (always recording)",
+    ["  |cffffff00/qct key <shift|ctrl|alt|none>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
+        "  |cffffff00/qct key <shift|ctrl|alt|none>|r - 詳情視窗快捷鍵（預設 shift，可避開 Questie 的 Shift）",
+    ["用法: /qct key shift|ctrl|alt|none"] = "用法: /qct key shift|ctrl|alt|none",
+    ["详情窗快捷键: %s"] = "詳情視窗快捷鍵: %s",
+    ["  |cffffff00/qct key <shift|ctrl|alt|none>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
+        "  |cffffff00/qct key <shift|ctrl|alt|none>|r - chain window key (default shift; avoids Questie's Shift)",
+    ["用法: /qct key shift|ctrl|alt|none"] = "Usage: /qct key shift|ctrl|alt|none",
+    ["详情窗快捷键: %s"] = "Chain window key: %s",
     ["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"] =
         "  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - switch UI language",
     ["界面语言: %s"] = "UI language: %s",

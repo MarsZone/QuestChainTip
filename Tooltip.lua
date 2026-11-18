@@ -19,6 +19,65 @@ local PAD_X, PAD_Y = 10, 8
 local LINE_HEIGHT = 15
 local MAX_ROWS = 42
 
+--------------------------------------------------------------------------------
+-- 详情窗快捷键
+--
+-- 原来写死 Shift，但 Questie 自己也用 Shift（地图上按住 Shift 切换被隐藏的任务标记），
+-- 两边撞在一起：玩家想切 Questie 的隐藏任务，我们这边却弹了个窗。
+-- 现在让玩家在设置里选 Shift / Ctrl / Alt / 不启用，默认仍是 Shift（老用户零感知）。
+--
+-- 这段必须放在文件靠前的位置：下面 Update() 里拼提示文案要用 ChainKeyLabel()，
+-- 而 Lua 的 local 作用域从声明处才开始，放到后面会被当成全局变量（nil）。
+--------------------------------------------------------------------------------
+
+local CHAIN_KEY_ORDER = { "SHIFT", "CTRL", "ALT", "NONE" }
+
+---当前生效的快捷键（配置非法时回落到 SHIFT）
+local function ChainKey()
+    local key = QCT.db and QCT.db.chainKey
+    if key == "CTRL" or key == "ALT" or key == "NONE" or key == "SHIFT" then return key end
+    return "SHIFT"
+end
+T.ChainKey = ChainKey
+
+---快捷键显示名。Shift/Ctrl/Alt 是英文键名，各语言都不译；「不启用」才需要翻译。
+local function ChainKeyLabel()
+    local key = ChainKey()
+    if key == "NONE" then return L["不启用"] end
+    return key:sub(1, 1) .. key:sub(2):lower()
+end
+T.ChainKeyLabel = ChainKeyLabel
+
+---某个全局按键函数现在是不是按下状态。客户端没有这个 API 就当作没按。
+local function KeyDown(globalName)
+    local fn = _G[globalName]
+    if type(fn) ~= "function" then return false end
+    local ok, value = pcall(fn)
+    return ok and value and true or false
+end
+
+---配置的那个快捷键现在按着没有
+local function IsChainKeyDown()
+    local key = ChainKey()
+    if key == "NONE" then return false end
+    if key == "CTRL" then return KeyDown("IsControlKeyDown") end
+    if key == "ALT" then return KeyDown("IsAltKeyDown") end
+    return KeyDown("IsShiftKeyDown")
+end
+T.IsChainKeyDown = IsChainKeyDown
+
+---把 MODIFIER_STATE_CHANGED 的按键名（LSHIFT / RSHIFT / LCTRL / RCTRL / LALT / RALT）
+---归到 SHIFT / CTRL / ALT 三族，方便和配置值直接比。
+local function KeyFamily(key)
+    if type(key) ~= "string" then return nil end
+    if key:find("SHIFT", 1, true) then return "SHIFT" end
+    if key:find("CTRL", 1, true) then return "CTRL" end
+    if key:find("ALT", 1, true) then return "ALT" end
+    return nil
+end
+T.KeyFamily = KeyFamily
+T.ChainKeyOrder = CHAIN_KEY_ORDER
+
 local NEXT_ICON = "|TInterface\\AddOns\\Questie\\Icons\\nextquest.blp:14:14:0:0|t"
 local REP_ICON = "|TInterface\\AddOns\\Questie\\Icons\\reputation.blp:14:14:0:0|t"
 
@@ -410,7 +469,7 @@ function T:Build(questId)
             end
         end
         if truncated then
-            addLine(F.DIM .. INDENT .. L["…（在世界地图上按住 Shift 查看完整任务链）"] .. "|r")
+            addLine(F.DIM .. INDENT .. L.F("…（在世界地图上按住 %s 查看完整任务链）", ChainKeyLabel()) .. "|r")
         end
         hasContent = true
     end)
@@ -474,7 +533,7 @@ function T:Build(questId)
             addDouble(INDENT .. QuestTitle(nextId), right .. StateText(nextId))
         end
         if truncated and not shift then
-            addLine(F.DIM .. INDENT .. L["…（在世界地图上按住 Shift 查看完整任务链）"] .. "|r")
+            addLine(F.DIM .. INDENT .. L.F("…（在世界地图上按住 %s 查看完整任务链）", ChainKeyLabel()) .. "|r")
         end
         hasContent = true
     end)
@@ -913,7 +972,7 @@ function T:Refresh(force)
     self.lastQuestId = state.questId
 
     -- 地图上按住 Shift：直接开详情窗，不弹面板（地图已经关掉时不许开，见 OnModifierChanged）
-    if IsShiftKeyDown() and IsMapQuestIcon(owner) and IsWorldMapOpen() and QCT.Window then
+    if IsChainKeyDown() and IsMapQuestIcon(owner) and IsWorldMapOpen() and QCT.Window then
         QCT.Log:Add("shift", "开详情窗 | 任务:", state.questId, "| 链:", self:DescribeFrameChain(owner))
         self:Hide()
         local window = QCT.Window
@@ -1089,11 +1148,11 @@ ExplainOpened = function(owner, questId)
     end
 end
 
----地图上按住 Shift → 打开详情窗。
+---地图上按住快捷键（默认 Shift）→ 打开详情窗。
 ---为什么只在世界地图：地图上 Shift 没有被游戏占用；任务日志里 Shift+点击是原生的
 ---「把任务链接贴到聊天框」，抢了玩家就没法复制任务链接。
 function T:OnModifierChanged()
-    if not IsShiftKeyDown() then return end
+    if not IsChainKeyDown() then return end
 
     local tip = _G.GameTooltip
     local shown = tip ~= nil and tip.IsShown ~= nil and tip:IsShown()
@@ -1176,14 +1235,15 @@ function T:Enable()
     if self.enabled then return end
     self.enabled = true
 
-    -- 先把 Shift 监听装上：它不依赖任何钩子，是最不能丢的一环
+    -- 先把快捷键监听装上：它不依赖任何钩子，是最不能丢的一环
     TryInstall("MODIFIER_STATE_CHANGED", function()
         local frame = CreateFrame("Frame")
         frame:RegisterEvent("MODIFIER_STATE_CHANGED")
         frame:SetScript("OnEvent", function(_, _, key)
-            if key ~= "LSHIFT" and key ~= "RSHIFT" then return end
+            -- 只认玩家配的那一族：配成 Ctrl 时按 Shift 不再触发
+            if KeyFamily(key) ~= ChainKey() then return end
             local ok, err = pcall(T.OnModifierChanged, T)
-            if not ok then QCT:Debug("Shift 处理失败:", tostring(err)) end
+            if not ok then QCT:Debug("快捷键处理失败:", tostring(err)) end
         end)
         self.eventFrame = frame
     end)

@@ -166,7 +166,8 @@ end
 local function CreatePanel()
     local backdropTemplate = BackdropTemplateMixin and "BackdropTemplate" or nil
     local frame = CreateFrame("Frame", PANEL_NAME, UIParent, backdropTemplate)
-    frame:SetSize(WIDTH, 450)
+    -- 比原来高 70px：多了一行「详情窗快捷键」，底部按钮和提示语不能被挤到一起
+    frame:SetSize(WIDTH, 520)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -198,8 +199,16 @@ local function CreatePanel()
 
     local subtitle = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-    subtitle:SetText(L["在世界地图上悬停任务图标显示简介，按住 Shift 打开整条任务链详情窗；小地图上不弹"])
     subtitle:SetTextColor(0.7, 0.7, 0.7)
+    -- 文案里的按键是动态的（玩家可以改成 Ctrl / Alt），放进 SyncControls 里一起刷新
+    controls[#controls + 1] = {
+        kind = "mode",
+        update = function()
+            local key = (QCT.Tooltip and QCT.Tooltip.ChainKeyLabel and QCT.Tooltip.ChainKeyLabel()) or "Shift"
+            subtitle:SetText(L.F(
+                "在世界地图上悬停任务图标显示简介，按住 %s 打开整条任务链详情窗；小地图上不弹", key))
+        end,
+    }
 
     if UIPanelCloseButton then
         local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -229,6 +238,33 @@ local function CreatePanel()
     controls[#controls + 1] = {
         kind = "mode",
         update = function() modeButton:SetText(MODE_LABEL[QCT.db.panelMode or "map"]) end,
+    }
+    y = y - ROW
+
+    -- 详情窗快捷键。为什么可配：Questie 自己也用 Shift（地图上按住 Shift 切换被隐藏的任务标记），
+    -- 默认值会跟它撞车，玩家按 Shift 想切 Questie 的隐藏任务，结果这边弹了个窗。
+    NewLabel(frame, L["详情窗快捷键"], 22, y + 3)
+    local KEY_ORDER = { "SHIFT", "CTRL", "ALT", "NONE" }
+    local function KeyText(value)
+        if value == "CTRL" then return "Ctrl" end
+        if value == "ALT" then return "Alt" end
+        if value == "NONE" then return L["不启用"] end
+        return "Shift"
+    end
+    local keyButton
+    keyButton = NewButton(frame, KeyText(QCT.db.chainKey), 120, 200, y, function()
+        local current = QCT.db.chainKey or "SHIFT"
+        local index = 1
+        for i, value in ipairs(KEY_ORDER) do
+            if value == current then index = i end
+        end
+        QCT.db.chainKey = KEY_ORDER[index % #KEY_ORDER + 1]
+        keyButton:SetText(KeyText(QCT.db.chainKey))
+        Apply()
+    end)
+    controls[#controls + 1] = {
+        kind = "mode",
+        update = function() keyButton:SetText(KeyText(QCT.db.chainKey or "SHIFT")) end,
     }
     y = y - ROW
 
