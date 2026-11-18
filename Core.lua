@@ -260,7 +260,7 @@ local function PrintHelp()
     QCT:Print(L["  |cffffff00/qct why|r - 打印运行状态，排查为什么没显示"])
     QCT:Print(L["  |cffffff00/qct trace|r - 打印后台日志（默认一直在记，无需开启）"])
     QCT:Print(L["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"])
-    QCT:Print(L["  |cffffff00/qct key <shift|ctrl|alt|none>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"])
+    QCT:Print(L["  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"])
 end
 
 SLASH_QUESTCHAINTIP1 = "/qct"
@@ -281,14 +281,17 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
         local now = L.SetLocale(want ~= "" and want or "auto")
         QCT:Print(L.F("界面语言已切换为 %s（/reload 后完全生效）", now))
     elseif cmd == "key" then
-        -- 详情窗快捷键。Questie 也用 Shift，玩家可以改成 Ctrl / Alt 或直接关掉
-        local want = (rest or ""):gsub("%s+", ""):upper()
-        if want == "SHIFT" or want == "CTRL" or want == "ALT" or want == "NONE" then
-            QCT.db.chainKey = want
+        -- 详情窗快捷键。Questie 也用 Shift，玩家可以改成 Ctrl / Alt、任意键，或直接关掉
+        local want = (rest or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if want == "" then
+            QCT:Print(L["用法: /qct key <shift|ctrl|alt|none|任意键>"])
+        else
+            QCT.db.chainKey = want:upper()
+            if QCT.Tooltip and QCT.Tooltip.ApplyChainKey then
+                pcall(QCT.Tooltip.ApplyChainKey, QCT.Tooltip)
+            end
             local label = (QCT.Tooltip and QCT.Tooltip.ChainKeyLabel and QCT.Tooltip.ChainKeyLabel()) or want
             QCT:Print(L.F("详情窗快捷键: %s", label))
-        else
-            QCT:Print(L["用法: /qct key shift|ctrl|alt|none"])
         end
     elseif cmd == "toggle" then
         QCT.db.enabled = not QCT.db.enabled

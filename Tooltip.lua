@@ -31,20 +31,28 @@ local MAX_ROWS = 42
 --------------------------------------------------------------------------------
 
 local CHAIN_KEY_ORDER = { "SHIFT", "CTRL", "ALT", "NONE" }
+local MODIFIER_SET = { SHIFT = true, CTRL = true, ALT = true }
 
----当前生效的快捷键（配置非法时回落到 SHIFT）
+---当前生效的快捷键。可以是 SHIFT / CTRL / ALT / NONE，也可以是任意按键串（"F"、"CTRL-1"）。
 local function ChainKey()
     local key = QCT.db and QCT.db.chainKey
-    if key == "CTRL" or key == "ALT" or key == "NONE" or key == "SHIFT" then return key end
+    if type(key) == "string" and key ~= "" then return key end
     return "SHIFT"
 end
 T.ChainKey = ChainKey
+
+---是不是三个修饰键之一（这三个走事件监听，其它键走游戏绑定）
+local function IsModifierKey(key)
+    return MODIFIER_SET[key] == true
+end
+T.IsModifierKey = IsModifierKey
 
 ---快捷键显示名。Shift/Ctrl/Alt 是英文键名，各语言都不译；「不启用」才需要翻译。
 local function ChainKeyLabel()
     local key = ChainKey()
     if key == "NONE" then return L["不启用"] end
-    return key:sub(1, 1) .. key:sub(2):lower()
+    if IsModifierKey(key) then return key:sub(1, 1) .. key:sub(2):lower() end
+    return key
 end
 T.ChainKeyLabel = ChainKeyLabel
 
@@ -77,6 +85,59 @@ local function KeyFamily(key)
 end
 T.KeyFamily = KeyFamily
 T.ChainKeyOrder = CHAIN_KEY_ORDER
+
+--------------------------------------------------------------------------------
+-- 自定义快捷键：任意键
+--
+-- 修饰键靠 MODIFIER_STATE_CHANGED，零副作用。但玩家想绑 F / 数字键这类，
+-- 事件监听做不到——WoW 没有通用的「某个键现在按着吗」API，
+-- 只能用 SetBindingClick 把按键绑到一个隐藏按钮上。
+-- 代价：会占用那个键原本的绑定（玩家自己选的，设置界面有提示）。
+--------------------------------------------------------------------------------
+
+local HOTKEY_BUTTON = "QuestChainTipHotkeyButton"
+local boundKey = nil
+
+local function HotkeyButton()
+    local button = _G[HOTKEY_BUTTON]
+    if button then return button end
+    button = CreateFrame("Button", HOTKEY_BUTTON, UIParent)
+    button:SetSize(1, 1)
+    button:Hide()
+    button:SetScript("OnClick", function()
+        if T.TryOpenFromHover then pcall(T.TryOpenFromHover, T, "hotkey") end
+    end)
+    return button
+end
+
+---把配置的按键重新应用到游戏绑定上。改成修饰键 / 不启用时先把旧绑定清掉。
+---@return boolean 是否成功（修饰键模式恒为 true）
+function T:ApplyChainKey()
+    if boundKey then
+        if type(SetBindingClick) == "function" then
+            pcall(SetBindingClick, boundKey)
+        elseif type(SetBinding) == "function" then
+            pcall(SetBinding, boundKey)
+        end
+        boundKey = nil
+    end
+
+    local key = ChainKey()
+    if IsModifierKey(key) or key == "NONE" then return true end
+
+    HotkeyButton()
+    local ok = false
+    if type(SetBindingClick) == "function" then
+        ok = pcall(SetBindingClick, key, HOTKEY_BUTTON)
+    elseif type(SetBinding) == "function" then
+        ok = pcall(SetBinding, key, "CLICK " .. HOTKEY_BUTTON)
+    end
+    if ok then
+        boundKey = key
+        if type(SaveBindings) == "function" then pcall(SaveBindings, 2) end
+    end
+    return ok and true or false
+end
 
 local NEXT_ICON = "|TInterface\\AddOns\\Questie\\Icons\\nextquest.blp:14:14:0:0|t"
 local REP_ICON = "|TInterface\\AddOns\\Questie\\Icons\\reputation.blp:14:14:0:0|t"
@@ -1148,12 +1209,9 @@ ExplainOpened = function(owner, questId)
     end
 end
 
----地图上按住快捷键（默认 Shift）→ 打开详情窗。
----为什么只在世界地图：地图上 Shift 没有被游戏占用；任务日志里 Shift+点击是原生的
----「把任务链接贴到聊天框」，抢了玩家就没法复制任务链接。
-function T:OnModifierChanged()
-    if not IsChainKeyDown() then return end
-
+---从「当前鼠标悬停的任务」尝试开窗。修饰键和自定义热键共用这一段。
+---@param source string? "modifier" / "hotkey"，只用于日志区分是哪条路进来的
+function T:TryOpenFromHover(source)
     local tip = _G.GameTooltip
     local shown = tip ~= nil and tip.IsShown ~= nil and tip:IsShown()
 
@@ -1184,7 +1242,8 @@ function T:OnModifierChanged()
         end
     end
 
-    QCT.Log:Add("shift", "Shift 触发 | tooltip:", shown and "显示" or "隐藏",
+    QCT.Log:Add("shift", source == "hotkey" and "热键触发" or "快捷键触发",
+        "| tooltip:", shown and "显示" or "隐藏",
         "| 目标:", SafeName(owner) or "<无>",
         "| 是地图图标:", owner and (IsMapQuestIcon(owner) and "是" or "否") or "?",
         "| 任务:", tostring(questId),
@@ -1219,6 +1278,14 @@ function T:OnModifierChanged()
     ExplainOpened(owner, questId)
 end
 
+---修饰键那条路：按下配置的 Shift / Ctrl / Alt 时进来。
+---为什么只在世界地图：地图上这些键没有被游戏占用；任务日志里 Shift+点击是原生的
+---「把任务链接贴到聊天框」，抢了玩家就没法复制任务链接。
+function T:OnModifierChanged()
+    if not IsChainKeyDown() then return end
+    self:TryOpenFromHover("modifier")
+end
+
 ---每一步单独 pcall：这个客户端上任何一个钩子挂不上，都不能连累后面的步骤。
 ---尤其是 Shift 那个事件帧——它排在最后，一旦前面抛错，Shift 就彻底没反应了。
 ---@param label string
@@ -1246,6 +1313,12 @@ function T:Enable()
             if not ok then QCT:Debug("快捷键处理失败:", tostring(err)) end
         end)
         self.eventFrame = frame
+    end)
+
+    -- 自定义键（F / 数字键之类）走游戏绑定，登录时也要重新应用一次：
+    -- 绑定只在 SaveBindings 后才持久化，换角色 / 重登都可能被冲掉
+    TryInstall("自定义快捷键", function()
+        self:ApplyChainKey()
     end)
 
     TryInstall("任务日志钩子", function()

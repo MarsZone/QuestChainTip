@@ -28,6 +28,10 @@ local function Apply()
     if QCT.Tooltip and QCT.Tooltip.Refresh and GameTooltip and GameTooltip:IsShown() then
         pcall(QCT.Tooltip.Refresh, QCT.Tooltip, true)
     end
+    -- 快捷键可能是自定义键，改完要重新绑到游戏按键上（或把旧绑定清掉）
+    if QCT.Tooltip and QCT.Tooltip.ApplyChainKey then
+        pcall(QCT.Tooltip.ApplyChainKey, QCT.Tooltip)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -142,6 +146,85 @@ local function NewButton(parent, text, width, x, y, onClick)
 end
 
 --------------------------------------------------------------------------------
+-- 按键捕获（自定义快捷键）
+--
+-- 为什么要有：Questie 用 Shift，有人还想绑别的键。只给 Shift/Ctrl/Alt 三个选项
+-- 仍然是「限制死」，所以这里让玩家直接按一下想用的键。
+--
+-- 捕获期间临时打开键盘，抓到一个非修饰键就结束；Esc 或点空白处取消。
+-- 自定义键本身靠 SetBindingClick 绑到隐藏按钮上（见 Tooltip.ApplyChainKey）。
+--------------------------------------------------------------------------------
+
+local captureFrame
+
+local function StopCapture()
+    if not captureFrame then return end
+    captureFrame:EnableKeyboard(false)
+    captureFrame:Hide()
+end
+
+local function StartCapture(onDone)
+    if not captureFrame then
+        local frame = CreateFrame("Frame", "QuestChainTipKeyCapture", UIParent)
+        frame:SetAllPoints(UIParent)
+        frame:SetFrameStrata("FULLSCREEN_DIALOG")
+        frame:EnableMouse(true)
+
+        local bg = frame:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        bg:SetVertexColor(0, 0, 0, 0.6)
+
+        local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge")
+        title:SetPoint("CENTER", 0, 24)
+        title:SetTextColor(1, 0.82, 0)
+
+        local hint = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        hint:SetPoint("CENTER", title, "BOTTOM", 0, -14)
+        hint:SetTextColor(0.8, 0.8, 0.8)
+
+        frame.title = title
+        frame.hint = hint
+        frame:Hide()
+
+        frame:SetScript("OnMouseDown", StopCapture)
+        frame:SetScript("OnKeyUp", function(self)
+            -- 松键后把按键放行，避免捕获结束后游戏收不到键
+            if self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(true) end
+        end)
+        frame:SetScript("OnKeyDown", function(self, key)
+            if self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(false) end
+            if key == "ESCAPE" then
+                StopCapture()
+                return
+            end
+            -- 只按下修饰键时不算数，等玩家按真正的键
+            if key == "LSHIFT" or key == "RSHIFT" or key == "LCTRL" or key == "RCTRL"
+                or key == "LALT" or key == "RALT" then
+                return
+            end
+
+            local parts = {}
+            if IsControlKeyDown and IsControlKeyDown() then parts[#parts + 1] = "CTRL" end
+            if IsAltKeyDown and IsAltKeyDown() then parts[#parts + 1] = "ALT" end
+            if IsShiftKeyDown and IsShiftKeyDown() then parts[#parts + 1] = "SHIFT" end
+            parts[#parts + 1] = key
+            local binding = table.concat(parts, "-")
+
+            StopCapture()
+            if onDone then pcall(onDone, binding) end
+        end)
+
+        captureFrame = frame
+    end
+
+    captureFrame.title:SetText(L["请按下一个按键"])
+    captureFrame.hint:SetText(L["Esc 或点击空白处取消 · 自定义键会占用该键原本的绑定"])
+    captureFrame:Show()
+    captureFrame:EnableKeyboard(true)
+end
+
+--------------------------------------------------------------------------------
 -- 同步控件显示
 --------------------------------------------------------------------------------
 
@@ -249,18 +332,26 @@ local function CreatePanel()
         if value == "CTRL" then return "Ctrl" end
         if value == "ALT" then return "Alt" end
         if value == "NONE" then return L["不启用"] end
-        return "Shift"
+        if value == "SHIFT" or value == nil then return "Shift" end
+        return value    -- 自定义键（"F" / "CTRL-1"）原样显示
     end
     local keyButton
-    keyButton = NewButton(frame, KeyText(QCT.db.chainKey), 120, 200, y, function()
+    keyButton = NewButton(frame, KeyText(QCT.db.chainKey), 130, 190, y, function()
         local current = QCT.db.chainKey or "SHIFT"
-        local index = 1
+        local index = 0     -- 自定义键不在列表里，点一下回到 Shift
         for i, value in ipairs(KEY_ORDER) do
             if value == current then index = i end
         end
         QCT.db.chainKey = KEY_ORDER[index % #KEY_ORDER + 1]
         keyButton:SetText(KeyText(QCT.db.chainKey))
         Apply()
+    end)
+    NewButton(frame, L["自定义…"], 92, 326, y, function()
+        StartCapture(function(binding)
+            QCT.db.chainKey = binding
+            keyButton:SetText(KeyText(binding))
+            Apply()
+        end)
     end)
     controls[#controls + 1] = {
         kind = "mode",

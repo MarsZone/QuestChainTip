@@ -103,6 +103,10 @@ local zhTW = {
     ["悬停面板"] = "懸停面板",
     ["详情窗快捷键"] = "詳情視窗快捷鍵",
     ["不启用"] = "不啟用",
+    ["自定义…"] = "自訂…",
+    ["请按下一个按键"] = "請按下一個按鍵",
+    ["Esc 或点击空白处取消 · 自定义键会占用该键原本的绑定"] =
+        "Esc 或點擊空白處取消 · 自訂鍵會佔用該鍵原本的綁定",
     ["不显示"] = "不顯示",
     ["仅世界地图"] = "僅世界地圖",
     ["全部位置"] = "全部位置",
@@ -180,14 +184,10 @@ local zhTW = {
         "  |cffffff00/qct why|r - 列印執行狀態，排查為什麼沒顯示",
     ["  |cffffff00/qct trace|r - 打印后台日志（默认一直在记，无需开启）"] =
         "  |cffffff00/qct trace|r - 列印背景日誌（預設一直在記錄，無需開啟）",
-    ["  |cffffff00/qct key <shift|ctrl|alt|none>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
-        "  |cffffff00/qct key <shift|ctrl|alt|none>|r - 詳情視窗快捷鍵（預設 shift，可避開 Questie 的 Shift）",
-    ["用法: /qct key shift|ctrl|alt|none"] = "用法: /qct key shift|ctrl|alt|none",
+    ["  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
+        "  |cffffff00/qct key <shift|ctrl|alt|none|任意鍵>|r - 詳情視窗快捷鍵（預設 shift，可避開 Questie 的 Shift）",
+    ["用法: /qct key <shift|ctrl|alt|none|任意键>"] = "用法: /qct key <shift|ctrl|alt|none|任意鍵>",
     ["详情窗快捷键: %s"] = "詳情視窗快捷鍵: %s",
-    ["  |cffffff00/qct key <shift|ctrl|alt|none>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
-        "  |cffffff00/qct key <shift|ctrl|alt|none>|r - chain window key (default shift; avoids Questie's Shift)",
-    ["用法: /qct key shift|ctrl|alt|none"] = "Usage: /qct key shift|ctrl|alt|none",
-    ["详情窗快捷键: %s"] = "Chain window key: %s",
     ["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"] =
         "  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切換介面語言",
     ["界面语言: %s"] = "介面語言: %s",
@@ -267,6 +267,10 @@ local enUS = {
     ["悬停面板"] = "Hover panel",
     ["详情窗快捷键"] = "Chain window key",
     ["不启用"] = "Disabled",
+    ["自定义…"] = "Custom...",
+    ["请按下一个按键"] = "Press a key",
+    ["Esc 或点击空白处取消 · 自定义键会占用该键原本的绑定"] =
+        "Esc or click elsewhere to cancel · a custom key takes over that key's original binding",
     ["不显示"] = "Off",
     ["仅世界地图"] = "World map only",
     ["全部位置"] = "Everywhere",
@@ -344,13 +348,9 @@ local enUS = {
         "  |cffffff00/qct why|r - print runtime state, to diagnose why nothing shows",
     ["  |cffffff00/qct trace|r - 打印后台日志（默认一直在记，无需开启）"] =
         "  |cffffff00/qct trace|r - print the background log (always recording)",
-    ["  |cffffff00/qct key <shift|ctrl|alt|none>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
-        "  |cffffff00/qct key <shift|ctrl|alt|none>|r - 詳情視窗快捷鍵（預設 shift，可避開 Questie 的 Shift）",
-    ["用法: /qct key shift|ctrl|alt|none"] = "用法: /qct key shift|ctrl|alt|none",
-    ["详情窗快捷键: %s"] = "詳情視窗快捷鍵: %s",
-    ["  |cffffff00/qct key <shift|ctrl|alt|none>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
-        "  |cffffff00/qct key <shift|ctrl|alt|none>|r - chain window key (default shift; avoids Questie's Shift)",
-    ["用法: /qct key shift|ctrl|alt|none"] = "Usage: /qct key shift|ctrl|alt|none",
+    ["  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
+        "  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - chain window key (default shift; avoids Questie's Shift)",
+    ["用法: /qct key <shift|ctrl|alt|none|任意键>"] = "Usage: /qct key <shift|ctrl|alt|none|any key>",
     ["详情窗快捷键: %s"] = "Chain window key: %s",
     ["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"] =
         "  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - switch UI language",
