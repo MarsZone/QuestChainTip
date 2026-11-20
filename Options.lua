@@ -36,6 +36,13 @@ local function Apply()
     if QCT.Window and QCT.Window.ApplyWidth then
         pcall(QCT.Window.ApplyWidth, QCT.Window)
     end
+    -- 血量数值 / 小地图按钮：开关立刻生效
+    if QCT.Health and QCT.Health.Refresh then
+        pcall(QCT.Health.Refresh, QCT.Health)
+    end
+    if QCT.Minimap and QCT.Minimap.Refresh then
+        pcall(QCT.Minimap.Refresh, QCT.Minimap)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -253,8 +260,8 @@ end
 local function CreatePanel()
     local backdropTemplate = BackdropTemplateMixin and "BackdropTemplate" or nil
     local frame = CreateFrame("Frame", PANEL_NAME, UIParent, backdropTemplate)
-    -- 比最初高 130px：多了「详情窗快捷键」和两行宽度设置，底部按钮和提示语不能被挤到一起
-    frame:SetSize(WIDTH, 580)
+    -- 比最初高 220px：多了两个快捷键、两行宽度、血量和小地图图标，底部按钮和提示语不能被挤到一起
+    frame:SetSize(WIDTH, 670)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -313,6 +320,13 @@ local function CreatePanel()
     local y = -60
 
     NewCheck(frame, L["启用插件"], "enabled", 22, y)
+    y = y - ROW
+
+    -- 血量数值：和任务链无关的附加小功能，默认关，玩家自己开
+    NewCheck(frame, L["显示血量数值（目标/焦点血条上）"], "showHealth", 22, y)
+    y = y - ROW
+
+    NewCheck(frame, L["显示小地图图标"], "minimap", 22, y)
     y = y - ROW
 
     -- 悬停面板显示范围：三态循环按钮
@@ -420,6 +434,32 @@ local function CreatePanel()
     controls[#controls + 1] = {
         kind = "mode",
         update = function() keyButton:SetText(KeyText(QCT.db.chainKey or "SHIFT")) end,
+    }
+    y = y - ROW
+
+    -- 任务日志快捷键。任务日志里 Shift+点击是原生的「把任务链接贴到聊天框」，
+    -- 所以这条路单独一个键，默认 Alt（Alt 在任务日志里没有原生用途）。
+    NewLabel(frame, L["任务日志快捷键"], 22, y + 3)
+    local QL_ORDER = { "ALT", "CTRL", "NONE" }
+    local function QLText(value)
+        if value == "CTRL" then return "Ctrl" end
+        if value == "NONE" then return L["不启用"] end
+        return "Alt"
+    end
+    local qlButton
+    qlButton = NewButton(frame, QLText(QCT.db.questLogKey), 130, 190, y, function()
+        local current = QCT.db.questLogKey or "ALT"
+        local index = 1
+        for i, value in ipairs(QL_ORDER) do
+            if value == current then index = i end
+        end
+        QCT.db.questLogKey = QL_ORDER[index % #QL_ORDER + 1]
+        qlButton:SetText(QLText(QCT.db.questLogKey))
+        Apply()
+    end)
+    controls[#controls + 1] = {
+        kind = "mode",
+        update = function() qlButton:SetText(QLText(QCT.db.questLogKey or "ALT")) end,
     }
     y = y - ROW
 

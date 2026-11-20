@@ -96,6 +96,42 @@ local function IsChainKeyDown()
 end
 T.IsChainKeyDown = IsChainKeyDown
 
+--------------------------------------------------------------------------------
+-- 任务日志快捷键
+--
+-- 任务日志里 Shift+点击是原生的「把任务链接贴到聊天框」，用 Shift 开详情窗会抢掉它，
+-- 所以这条路单独一个键，默认 Alt（Alt 在任务日志里没有原生用途）。
+-- 只给 Alt / Ctrl / 不启用三个选择：任务日志行拿不到「任意键」的按下状态，
+-- 自定义键只能靠游戏绑定，绑在任务日志上会吞掉点击，得不偿失。
+--------------------------------------------------------------------------------
+
+local QUESTLOG_KEY_ORDER = { "ALT", "CTRL", "NONE" }
+
+local function QuestLogKey()
+    local key = QCT.db and QCT.db.questLogKey
+    if key == "ALT" or key == "CTRL" or key == "NONE" then return key end
+    return "ALT"
+end
+T.QuestLogKey = QuestLogKey
+T.QuestLogKeyOrder = QUESTLOG_KEY_ORDER
+
+---任务日志用的那个键现在按着没有
+local function IsQuestLogKeyDown()
+    local key = QuestLogKey()
+    if key == "NONE" then return false end
+    if key == "CTRL" then return KeyDown("IsControlKeyDown") end
+    return KeyDown("IsAltKeyDown")
+end
+T.IsQuestLogKeyDown = IsQuestLogKeyDown
+
+---任务日志快捷键的显示名（不启用时走翻译）
+local function QuestLogKeyLabel()
+    local key = QuestLogKey()
+    if key == "NONE" then return L["不启用"] end
+    return key:sub(1, 1) .. key:sub(2):lower()
+end
+T.QuestLogKeyLabel = QuestLogKeyLabel
+
 ---把 MODIFIER_STATE_CHANGED 的按键名（LSHIFT / RSHIFT / LCTRL / RCTRL / LALT / RALT）
 ---归到 SHIFT / CTRL / ALT 三族，方便和配置值直接比。
 local function KeyFamily(key)
@@ -1182,7 +1218,7 @@ local function ExplainNoWindow(owner, questId)
         if mini == true then
             reason = "这是小地图图标（小地图不弹）"
         elseif IsQuestLogButton(owner) then
-            reason = "这是任务日志里的一行（Shift 要留给「链接到聊天框」）"
+            reason = "这是任务日志里的一行（用「任务日志快捷键」，默认 Alt）"
         elseif IsChatFrame(owner) then
             reason = "这是聊天框"
         elseif not IsMapQuestIcon(owner) then
@@ -1280,6 +1316,26 @@ function T:TryOpenFromHover(source)
         "| 任务日志行:", owner and (IsQuestLogButton(owner) and "是" or "否") or "?",
         "| 链:", owner and self:DescribeFrameChain(owner) or "<无>")
 
+    -- 任务日志行：单独一个键（默认 Alt）。
+    -- 不能共用地图那个键：配成 Shift 时，Shift+点击是原生的「把任务链接贴到聊天框」，
+    -- 抢掉玩家就没法复制任务链接了。
+    if IsQuestLogButton(owner) then
+        if not IsQuestLogKeyDown() then
+            ExplainNoWindow(owner, questId)
+            return
+        end
+        if not questId then
+            ExplainNoWindow(owner, nil)
+            return
+        end
+        if QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId then return end
+
+        self:Hide()
+        self:OpenChainWindow(questId)
+        ExplainOpened(owner, questId)
+        return
+    end
+
     if not IsMapQuestIcon(owner) then
         ExplainNoWindow(owner, questId)
         return
@@ -1305,11 +1361,11 @@ function T:TryOpenFromHover(source)
     ExplainOpened(owner, questId)
 end
 
----修饰键那条路：按下配置的 Shift / Ctrl / Alt 时进来。
----为什么只在世界地图：地图上这些键没有被游戏占用；任务日志里 Shift+点击是原生的
----「把任务链接贴到聊天框」，抢了玩家就没法复制任务链接。
+---修饰键那条路：按下配置的键时进来。
+---两条路各用各的键：世界地图用「详情窗快捷键」（默认 Shift），
+---任务日志用「任务日志快捷键」（默认 Alt，避开原生 Shift+点击复制链接）。
 function T:OnModifierChanged()
-    if not IsChainKeyDown() then return end
+    if not (IsChainKeyDown() or IsQuestLogKeyDown()) then return end
     self:TryOpenFromHover("modifier")
 end
 
@@ -1334,8 +1390,9 @@ function T:Enable()
         local frame = CreateFrame("Frame")
         frame:RegisterEvent("MODIFIER_STATE_CHANGED")
         frame:SetScript("OnEvent", function(_, _, key)
-            -- 只认玩家配的那一族：配成 Ctrl 时按 Shift 不再触发
-            if KeyFamily(key) ~= ChainKey() then return end
+            -- 只认玩家配的那两族：地图用 chainKey，任务日志用 questLogKey
+            local family = KeyFamily(key)
+            if family ~= ChainKey() and family ~= QuestLogKey() then return end
             local ok, err = pcall(T.OnModifierChanged, T)
             if not ok then QCT:Debug("快捷键处理失败:", tostring(err)) end
         end)

@@ -40,9 +40,13 @@ local DEFAULTS = {
     chainRewards = true,    -- 后续任务每行也显示经验/金钱/状态
     showPrereq = true,      -- 是否显示前置任务
     panelMode = "map",      -- 悬停面板：off=关闭 / map=仅世界地图（默认） / all=全部位置
-    chainKey = "SHIFT",     -- 详情窗快捷键：SHIFT / CTRL / ALT / NONE（不启用）
+    chainKey = "SHIFT",     -- 详情窗快捷键（世界地图）：SHIFT / CTRL / ALT / NONE / 任意键
+    questLogKey = "ALT",    -- 任务日志快捷键：ALT / CTRL / NONE（Shift 留给原生的链接到聊天框）
     panelWidth = 380,       -- 悬停面板文本列宽（像素，240~560）
     windowWidth = "AUTO",   -- 详情窗宽度："AUTO"（按屏幕）或 420~900 的像素值
+    showHealth = false,     -- 在目标/焦点框体血条上显示「当前 / 最大」（默认关）
+    minimap = true,         -- 显示小地图按钮
+    minimapAngle = 220,     -- 小地图按钮角度（度，从 12 点顺时针）
     descLines = 3,          -- 悬停面板最多显示几行描述
     chainDepth = 3,         -- 悬停面板最多显示几层后续
     chainDepthShift = 20,   -- 详情窗（地图上按 Shift）最多列多少环
@@ -128,6 +132,16 @@ function QCT:Start()
 
     -- 先把钩子装上：后面任何一步出错都不能让插件变成“完全不工作”
     self.Tooltip:Enable()
+
+    -- 血量数字 / 小地图按钮：都是可选小功能，单独包一层，坏了不影响任务链主流程
+    if self.Health and self.Health.Init then
+        local ok, err = pcall(self.Health.Init, self.Health)
+        if not ok then self:Trace("start", "血量模块初始化失败:", tostring(err)) end
+    end
+    if self.Minimap and self.Minimap.Init then
+        local ok, err = pcall(self.Minimap.Init, self.Minimap)
+        if not ok then self:Trace("start", "小地图按钮初始化失败:", tostring(err)) end
+    end
 
     -- 任务日志缓存失败也只是缓存没有，不能影响插件运行
     local refreshOk, refreshErr = pcall(self.Data.RefreshQuestLog, self.Data)
@@ -280,6 +294,7 @@ local function PrintHelp()
     QCT:Print(L["  |cffffff00/qct trace|r - 打印后台日志（默认一直在记，无需开启）"])
     QCT:Print(L["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"])
     QCT:Print(L["  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"])
+    QCT:Print(L["  |cffffff00/qct logkey <alt|ctrl|none>|r - 任务日志里开详情窗的键（默认 alt）"])
     QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
     QCT:Print(L["  |cffffff00/qct pwidth <240-560>|r - 悬停面板宽度"])
 end
@@ -313,6 +328,16 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
             end
             local label = (QCT.Tooltip and QCT.Tooltip.ChainKeyLabel and QCT.Tooltip.ChainKeyLabel()) or want
             QCT:Print(L.F("详情窗快捷键: %s", label))
+        end
+    elseif cmd == "logkey" then
+        -- 任务日志里开详情窗的键：Shift 要留给原生的「链接到聊天框」，默认 Alt
+        local want = (rest or ""):gsub("%s+", ""):upper()
+        if want == "ALT" or want == "CTRL" or want == "NONE" then
+            QCT.db.questLogKey = want
+            local label = (QCT.Tooltip and QCT.Tooltip.QuestLogKeyLabel and QCT.Tooltip.QuestLogKeyLabel()) or want
+            QCT:Print(L.F("任务日志快捷键: %s", label))
+        else
+            QCT:Print(L["用法: /qct logkey <alt|ctrl|none>"])
         end
     elseif cmd == "width" then
         -- 详情窗宽度：auto 按屏幕算，也可以钉死一个像素值
