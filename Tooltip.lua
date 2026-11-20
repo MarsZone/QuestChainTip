@@ -923,6 +923,146 @@ local function IsMapQuestIcon(owner)
 end
 T.IsMapQuestIcon = IsMapQuestIcon
 
+--------------------------------------------------------------------------------
+-- 任务日志行：按键那一刻现场问鼠标
+--
+-- 为什么不再用钩子记下来的按钮：任务日志的标题按钮是**打开任务日志时才创建**的，
+-- 而插件的钩子是在登录时装的，那一刻 QuestLogTitle1..N 全都还不存在，一个也挂不上。
+-- 玩家机器上实测 `/qct qlog` 显示「任务日志按钮数: 0」「全局处理器: 不存在」，
+-- 于是 questLogButton 永远是 nil，按 Alt 什么都不发生 —— 这就是三轮都没修好的原因。
+-- 钩子还可能因为客户端换了全局函数名而彻底失效，指望不上。
+--
+-- 所以改成按键这一刻直接问 GetMouseFocus：鼠标压在哪个按钮上，就用它的 GetID()
+-- 去查任务日志索引。不需要任何前置钩子，也不依赖客户端给按钮起什么名字。
+--------------------------------------------------------------------------------
+
+---任务日志帧现在开着没有
+local function QuestLogShown()
+    local frame = _G.QuestLogFrame or _G.QuestLog
+    if not frame or type(frame.IsShown) ~= "function" then return false end
+    local ok, shown = pcall(frame.IsShown, frame)
+    return ok and shown and true or false
+end
+T.QuestLogShown = QuestLogShown
+
+---frame 是 ancestor 自己，或者挂在它下面
+local function IsInside(frame, ancestor)
+    if not frame or not ancestor then return false end
+    local node = frame
+    for _ = 1, 8 do
+        if not node then break end
+        if node == ancestor then return true end
+        local ok, parent = pcall(function() return node:GetParent() end)
+        node = ok and parent or nil
+    end
+    return false
+end
+T.IsInside = IsInside
+
+---这个帧（或它的祖先）算不算任务日志里的行。
+---名字带 QuestLog 的、以及挂在任务日志帧下面的都算：有的 UI 包把行按钮改成无名帧，
+---只认名字会漏掉。
+local function IsQuestLogRow(frame)
+    if not frame then return false end
+    if IsQuestLogButton(frame) then return true end
+    return IsInside(frame, _G.QuestLogFrame) or IsInside(frame, _G.QuestLog)
+end
+
+---在 frame 里递归找「鼠标正压着、而且带 ID」的按钮（任务日志行就是这个形状）
+local function FindHoveredRow(frame, depth)
+    if not frame or depth > 4 then return nil end
+
+    if type(frame.IsMouseOver) == "function" and SafeMethodNumber(frame, "GetID") then
+        local ok, over = pcall(frame.IsMouseOver, frame)
+        if ok and over then return frame end
+    end
+
+    if type(frame.GetChildren) == "function" then
+        local ok, children = pcall(frame.GetChildren, frame)
+        if ok and type(children) == "table" then
+            for _, child in ipairs(children) do
+                local found = FindHoveredRow(child, depth + 1)
+                if found then return found end
+            end
+        end
+    end
+    return nil
+end
+
+---鼠标现在压在哪条任务日志上？返回 questId 和一句来源说明。
+---三条路，前一条走不通就走下一条：
+---  1) 鼠标焦点帧（含祖先）的 GetID() → 任务日志索引
+---  2) 任务日志帧里逐行问 IsMouseOver()
+---  3) 提示框第一行标题反查任务日志
+---@return number? questId, string? source
+function T:QuestIdUnderMouse()
+    local logFrame = _G.QuestLogFrame or _G.QuestLog
+    local logShown = QuestLogShown()
+
+    -- 1) 鼠标焦点帧
+    if type(GetMouseFocus) == "function" then
+        local ok, focus = pcall(GetMouseFocus)
+        if ok and focus then
+            local node, depth = focus, 0
+            while node and depth < 6 do
+                -- 必须限定在任务日志里：动作条按钮也有 ID，
+                -- 拿它的 ID 去查日志索引会在按 Alt 时开出完全无关的任务
+                if (logShown and IsInside(node, logFrame)) or IsQuestLogRow(node) then
+                    local index = SafeMethodNumber(node, "GetID")
+                    if index then
+                        local questId = D.GetQuestIdByIndex and D:GetQuestIdByIndex(index)
+                        if questId then return questId, "鼠标下按钮索引 " .. index end
+                    end
+                end
+                local pok, parent = pcall(function() return node:GetParent() end)
+                node = pok and parent or nil
+                depth = depth + 1
+            end
+        end
+    end
+
+    -- 2) 任务日志帧里逐行问（有的客户端 GetMouseFocus 返回不到行按钮上）
+    if logFrame and type(logFrame.GetChildren) == "function" then
+        local ok, children = pcall(logFrame.GetChildren, logFrame)
+        if ok and type(children) == "table" then
+            for _, child in ipairs(children) do
+                local hovered = FindHoveredRow(child, 0)
+                if hovered then
+                    local index = SafeMethodNumber(hovered, "GetID")
+                    local questId = index and D.GetQuestIdByIndex and D:GetQuestIdByIndex(index)
+                    if questId then return questId, "日志行 IsMouseOver 索引 " .. index end
+                end
+            end
+        end
+    end
+
+    -- 3) 提示框第一行标题反查（任务日志的提示框第一行就是任务名）
+    if logShown then
+        local tip = _G.GameTooltip
+        if tip and type(tip.IsShown) == "function" then
+            local sok, shown = pcall(tip.IsShown, tip)
+            if sok and shown then
+                local tok, found = pcall(function()
+                    for index = 1, 2 do
+                        local fontString = GetTipFontString(tip, index, "left")
+                        if fontString then
+                            local text = fontString:GetText()
+                            if text and text ~= "" then
+                                local id = D:FindQuestIdByTitle(text)
+                                if id then return id end
+                            end
+                        end
+                    end
+                    return nil
+                end)
+                if tok and found then return found, "提示标题反查" end
+            end
+        end
+    end
+
+    return nil
+end
+
 ---把帧的祖先链描述出来，排查「这个提示到底是谁弹的」用
 function T:DescribeFrameChain(owner)
     local parts = {}
@@ -1392,36 +1532,27 @@ end
 ---任务日志用「任务日志快捷键」（默认 Alt，避开原生 Shift+点击复制链接）。
 ---@param viaKey string? 按下的键族（SHIFT / CTRL / ALT），由事件直接带进来
 function T:OnModifierChanged(viaKey)
-    -- 任务日志这条路：只要鼠标还停在那行任务上，就直接开窗。
-    -- 为什么不走 TryOpenFromHover：有的 UI 包把任务日志的提示框换成自绘的，
-    -- GameTooltip 里没有 owner，按 Alt 永远找不到目标（玩家反馈「Alt 不弹」）。
-    -- 这里用 OnQuestLogButtonEnter 记下的按钮 + MouseIsOver 判断，完全不依赖 tooltip。
-    if viaKey and viaKey == QuestLogKey() and self.questLogButton and self.questLogQuestId then
-        -- 先看鼠标现在到底停在哪：如果停在地图图标上，就走下面的地图逻辑，
-        -- 别拿几十秒前悬停过的任务行来开窗
+    -- 任务日志这条路：按下键的这一刻现场问鼠标停在哪一行上。
+    -- 不依赖任何钩子，也不依赖 tooltip owner（有的 UI 包把任务日志的提示框换成自绘的，
+    -- GameTooltip 里根本没有 owner）。上一版靠「钩子记下的按钮 + MouseIsOver」，
+    -- 但按钮是打开日志时才创建的、钩子登录时就装完了，一个都没挂上，所以永远不弹。
+    if viaKey and viaKey == QuestLogKey() then
+        -- 先看鼠标是不是其实在地图图标上：那种情况交给下面的地图逻辑，
+        -- 否则地图上按任务日志键会去查日志，查不到就什么都不弹。
         local tip = _G.GameTooltip
-        local shown = tip ~= nil and tip.IsShown ~= nil and tip:IsShown()
-        local currentOwner = shown and CurrentOwner(tip) or nil
+        local tipShown = tip ~= nil and type(tip.IsShown) == "function" and tip:IsShown()
+        local currentOwner = tipShown and CurrentOwner(tip) or nil
         local onMapIcon = currentOwner ~= nil and IsMapQuestIcon(currentOwner)
 
-        local over
-        if onMapIcon then
-            over = false
-        elseif type(MouseIsOver) == "function" then
-            local ok, value = pcall(MouseIsOver, self.questLogButton)
-            over = ok and value and true or false
-        else
-            -- 没有 MouseIsOver 的客户端：用时间窗口兜底，避免鼠标早就移开了还开窗
-            over = (GetTime() - (self.questLogTime or 0)) < 30
-        end
-        if over then
-            local questId = self.questLogQuestId
-            if QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId then return end
-            self:Hide()
-            self:OpenChainWindow(questId)
-            QCT.Log:Add("questlog", "快捷键直接开窗 | 按钮:",
-                tostring(self.questLogButton:GetName()), "| 任务:", questId)
-            return
+        if not onMapIcon then
+            local questId, source = self:QuestIdUnderMouse()
+            if questId then
+                if QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId then return end
+                self:Hide()
+                self:OpenChainWindow(questId)
+                QCT.Log:Add("questlog", "快捷键开窗 |", tostring(source), "| 任务:", questId)
+                return
+            end
         end
     end
 
@@ -1555,13 +1686,29 @@ function T:Enable()
         end)
     end)
 
-    -- 任务日志界面打开时补一次日志缓存
+    -- 任务日志界面打开时补一次日志缓存，顺便补挂按钮钩子。
+    -- 钩子必须在这里重挂：登录时任务日志还没建，QuestLogTitle1..N 一个都不存在，
+    -- 只在 Enable() 里挂一次的话按钮数永远是 0。
     TryInstall("QuestLogFrame OnShow", function()
-        if QuestLogFrame and QuestLogFrame.HookScript then
-            QuestLogFrame:HookScript("OnShow", function()
+        local frame = _G.QuestLogFrame or _G.QuestLog
+        if frame and frame.HookScript then
+            frame:HookScript("OnShow", function()
                 D:RefreshQuestLog()
+                local ok, err = pcall(T.InstallQuestLogHooks, T)
+                if not ok then QCT:Debug("补挂任务日志钩子失败:", tostring(err)) end
             end)
         end
+    end)
+
+    -- QUEST_LOG_UPDATE 也补一次：有的客户端任务日志是复用的，不会再触发 OnShow
+    TryInstall("QUEST_LOG_UPDATE", function()
+        local frame = CreateFrame("Frame")
+        frame:RegisterEvent("QUEST_LOG_UPDATE")
+        frame:SetScript("OnEvent", function()
+            local ok, err = pcall(T.InstallQuestLogHooks, T)
+            if not ok then QCT:Debug("补挂任务日志钩子失败:", tostring(err)) end
+        end)
+        self.questLogEventFrame = frame
     end)
 
     QCT:Trace("hooks", "钩子安装完成 | Shift 监听:", self.eventFrame and "已挂" or "失败")
@@ -1600,6 +1747,7 @@ end
 function T:DiagnoseQuestLog()
     QCT:Print("---- 任务日志快捷键诊断 ----")
     QCT:Print("配置的键:", QuestLogKey())
+    QCT:Print("任务日志开着:", tostring(QuestLogShown()))
 
     local tip = _G.GameTooltip
     local shown = tip ~= nil and tip.IsShown ~= nil and tip:IsShown()
@@ -1609,14 +1757,15 @@ function T:DiagnoseQuestLog()
     QCT:Print("提示框持有者:", SafeName(owner) or "无",
         "| 算任务日志行:", tostring(owner and IsQuestLogButton(owner) or false))
 
-    local button = self.questLogButton
-    QCT:Print("最近悬停的任务按钮:", button and (SafeName(button) or "?") or "无",
-        "| 任务:", tostring(self.questLogQuestId))
-    if button and type(MouseIsOver) == "function" then
-        local ok, value = pcall(MouseIsOver, button)
-        QCT:Print("鼠标还在这个按钮上:", tostring(ok and value))
-    end
-    QCT:Print("任务日志按钮数:", tostring(self.buttonCount or 0),
+    -- 关键：这条路现在完全不看钩子，只看按键那一刻鼠标压在哪
+    local focus = type(GetMouseFocus) == "function" and GetMouseFocus() or nil
+    QCT:Print("鼠标焦点帧:", SafeName(focus) or "无",
+        "| ID:", tostring(SafeMethodNumber(focus, "GetID")))
+
+    local questId, source = self:QuestIdUnderMouse()
+    QCT:Print("鼠标下能定位到的任务:", tostring(questId), "| 来源:", tostring(source))
+
+    QCT:Print("（旧钩子）按钮数:", tostring(self.buttonCount or 0),
         "| 全局处理器:", tostring(self.hookedGlobal and "已挂" or "不存在"))
     QCT:Print("提示：鼠标停在任务行上再按 " .. QuestLogKeyLabel() .. "，应能打开详情窗。")
 end
