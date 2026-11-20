@@ -32,6 +32,10 @@ local function Apply()
     if QCT.Tooltip and QCT.Tooltip.ApplyChainKey then
         pcall(QCT.Tooltip.ApplyChainKey, QCT.Tooltip)
     end
+    -- 宽度改了：悬停面板上面已由 Refresh 重建；详情窗开着的话要按新宽度重排
+    if QCT.Window and QCT.Window.ApplyWidth then
+        pcall(QCT.Window.ApplyWidth, QCT.Window)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -249,8 +253,8 @@ end
 local function CreatePanel()
     local backdropTemplate = BackdropTemplateMixin and "BackdropTemplate" or nil
     local frame = CreateFrame("Frame", PANEL_NAME, UIParent, backdropTemplate)
-    -- 比原来高 70px：多了一行「详情窗快捷键」，底部按钮和提示语不能被挤到一起
-    frame:SetSize(WIDTH, 520)
+    -- 比最初高 130px：多了「详情窗快捷键」和两行宽度设置，底部按钮和提示语不能被挤到一起
+    frame:SetSize(WIDTH, 580)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -321,6 +325,58 @@ local function CreatePanel()
     controls[#controls + 1] = {
         kind = "mode",
         update = function() modeButton:SetText(MODE_LABEL[QCT.db.panelMode or "map"]) end,
+    }
+    y = y - ROW
+
+    -- 悬停面板宽度。原来写死 330，任务名/奖励物品一长就被迫折行，
+    -- 玩家反馈「一行信息显示不全就被迫换行」。
+    NewLabel(frame, L["悬停面板宽度"], 22, y + 3)
+    local PANEL_WIDTH_ORDER = { 300, 380, 460 }
+    local PANEL_WIDTH_LABEL = { [300] = L["窄"], [380] = L["标准"], [460] = L["宽"] }
+    local panelWidthButton
+    panelWidthButton = NewButton(frame, PANEL_WIDTH_LABEL[QCT.db.panelWidth or 380] or L["标准"], 120, 200, y, function()
+        local current = tonumber(QCT.db.panelWidth) or 380
+        local index = 2
+        for i, value in ipairs(PANEL_WIDTH_ORDER) do
+            if value == current then index = i end
+        end
+        QCT.db.panelWidth = PANEL_WIDTH_ORDER[index % #PANEL_WIDTH_ORDER + 1]
+        panelWidthButton:SetText(PANEL_WIDTH_LABEL[QCT.db.panelWidth] or L["标准"])
+        Apply()
+    end)
+    controls[#controls + 1] = {
+        kind = "mode",
+        update = function()
+            panelWidthButton:SetText(PANEL_WIDTH_LABEL[tonumber(QCT.db.panelWidth) or 380] or L["标准"])
+        end,
+    }
+    y = y - ROW
+
+    -- 详情窗宽度。默认 AUTO 按屏幕宽度算，也可以钉死一个值。
+    NewLabel(frame, L["详情窗宽度"], 22, y + 3)
+    local WINDOW_WIDTH_ORDER = { "AUTO", 480, 580, 720 }
+    local function WindowWidthLabel(value)
+        if value == "AUTO" or value == nil or value == 0 then return L["自动"] end
+        local numeric = tonumber(value)
+        if numeric == 480 then return L["窄"] end
+        if numeric == 720 then return L["宽"] end
+        return L["标准"]
+    end
+    local windowWidthButton
+    windowWidthButton = NewButton(frame, WindowWidthLabel(QCT.db.windowWidth), 120, 200, y, function()
+        local current = QCT.db.windowWidth
+        if current == nil then current = "AUTO" end
+        local index = 1
+        for i, value in ipairs(WINDOW_WIDTH_ORDER) do
+            if value == current then index = i end
+        end
+        QCT.db.windowWidth = WINDOW_WIDTH_ORDER[index % #WINDOW_WIDTH_ORDER + 1]
+        windowWidthButton:SetText(WindowWidthLabel(QCT.db.windowWidth))
+        Apply()
+    end)
+    controls[#controls + 1] = {
+        kind = "mode",
+        update = function() windowWidthButton:SetText(WindowWidthLabel(QCT.db.windowWidth)) end,
     }
     y = y - ROW
 

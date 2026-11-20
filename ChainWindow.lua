@@ -17,11 +17,16 @@ local W = {}
 QCT.Window = W
 
 local WINDOW_NAME = "QuestChainTipWindow"
-local WIDTH, HEIGHT = 580, 640
+local DEFAULT_WIDTH, HEIGHT = 580, 640
+local MIN_WIDTH, MAX_WIDTH = 420, 900
 local PAD = 16
 local TITLE_HEIGHT = 30
 local SCROLLBAR_WIDTH = 8
-local CONTENT_WIDTH = WIDTH - PAD * 2 - SCROLLBAR_WIDTH - 8
+
+-- 当前实际宽度。原来写死 580，任务描述和奖励物品名经常被迫折行；
+-- 现在由配置决定（设置里「详情窗宽度」，默认按屏幕宽度自适应）。
+local width = DEFAULT_WIDTH
+local contentWidth = DEFAULT_WIDTH - PAD * 2 - SCROLLBAR_WIDTH - 8
 
 local LINE_GAP = 2
 local BLOCK_GAP = 10
@@ -76,6 +81,48 @@ local function KindTag(kind)
 end
 
 --------------------------------------------------------------------------------
+-- 宽度
+--------------------------------------------------------------------------------
+
+---把配置里的宽度解析成实际像素。
+---"AUTO"（默认）按屏幕宽度的 44% 算：1080p 下约 760，窗口够宽又不至于顶满屏幕。
+---@return number
+function W:ResolveWidth()
+    local value = QCT.db and QCT.db.windowWidth
+    local screen = 1280
+    if UIParent and type(UIParent.GetWidth) == "function" then
+        local ok, w = pcall(UIParent.GetWidth, UIParent)
+        if ok and tonumber(w) and w > 200 then screen = w end
+    end
+
+    local result
+    if value == "AUTO" or value == nil or value == 0 then
+        result = math.floor(screen * 0.44)
+    else
+        result = tonumber(value) or DEFAULT_WIDTH
+    end
+    if result < MIN_WIDTH then result = MIN_WIDTH end
+    if result > MAX_WIDTH then result = MAX_WIDTH end
+
+    width = result
+    contentWidth = width - PAD * 2 - SCROLLBAR_WIDTH - 8
+    return width
+end
+
+---把宽度应用到已建好的控件上；窗口正开着就按新宽度重排一次
+function W:ApplyWidth()
+    local newWidth = self:ResolveWidth()
+    if not self.frame then return newWidth end
+    self.frame:SetSize(newWidth, HEIGHT)
+    if self.content then self.content:SetWidth(contentWidth) end
+    if self.questId and self:IsShown() then
+        local ok, err = pcall(self.Render, self, self.questId)
+        if not ok then QCT.Log:Add("window", "改宽后重排失败:", tostring(err)) end
+    end
+    return newWidth
+end
+
+--------------------------------------------------------------------------------
 -- 创建
 --------------------------------------------------------------------------------
 
@@ -103,9 +150,11 @@ end
 function W:Create()
     if self.frame then return self.frame end
 
+    self:ResolveWidth()
+
     local template = BackdropTemplateMixin and "BackdropTemplate" or nil
     local frame = CreateFrame("Frame", WINDOW_NAME, UIParent, template)
-    frame:SetSize(WIDTH, HEIGHT)
+    frame:SetSize(width, HEIGHT)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     frame:SetFrameStrata("DIALOG")
     frame:SetToplevel(true)
@@ -196,7 +245,7 @@ function W:Create()
     self.scroll = scroll
 
     local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(CONTENT_WIDTH, 100)
+    content:SetSize(contentWidth, 100)
     content:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
     -- 必须开启鼠标：否则行里的物品链接（|Hitem:...|h）收不到悬停事件
     content:EnableMouse(true)
@@ -324,6 +373,15 @@ function W:AttachItemLinks(frame)
         if not tip or IsForbidden(tip) or not link then return end
         tip:SetOwner(self, "ANCHOR_CURSOR")
         tip:SetHyperlink(link)
+        -- 详情窗是 DIALOG 层，会压在物品提示上面（玩家反馈「任务描述遮挡了物品信息」，
+        -- 表现是物品名和属性被窗口盖掉、只剩几个字露出来）。
+        -- 这里把物品提示顶到 TOOLTIP 层最高级：物品信息永远可见，代价是它会盖住窗口一角。
+        if type(tip.SetFrameStrata) == "function" then
+            pcall(tip.SetFrameStrata, tip, "TOOLTIP")
+        end
+        if type(tip.SetFrameLevel) == "function" then
+            pcall(tip.SetFrameLevel, tip, 900)
+        end
         tip:Show()
     end)
 
@@ -348,7 +406,7 @@ function W:AcquireRow(index)
     row:SetJustifyH("LEFT")
     row:SetJustifyV("TOP")
     row:SetWordWrap(true)
-    row:SetWidth(CONTENT_WIDTH)
+    row:SetWidth(contentWidth)
     self.rows[index] = row
     return row
 end
@@ -378,7 +436,7 @@ function W:PushDivider()
         self.dividers[self.dividerIndex] = divider
     end
 
-    divider:SetWidth(CONTENT_WIDTH)
+    divider:SetWidth(contentWidth)
     divider:ClearAllPoints()
     divider:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -(self.cursorY + 4))
     divider:Show()
@@ -392,7 +450,7 @@ function W:Push(text, width, r, g, b)
     self.rowIndex = self.rowIndex + 1
     local row = self:AcquireRow(self.rowIndex)
 
-    row:SetWidth(width or CONTENT_WIDTH)
+    row:SetWidth(width or contentWidth)
     row:SetTextColor(r or 1, g or 1, b or 1)
     row:SetText(text)
     row:ClearAllPoints()
@@ -409,9 +467,9 @@ function W:PushBlank(height)
 end
 
 function W:PushWrapped(text, prefix, width, r, g, b)
-    local lines = F.Wrap(text, prefix or "", width or CONTENT_WIDTH, self.content)
+    local lines = F.Wrap(text, prefix or "", width or contentWidth, self.content)
     for _, line in ipairs(lines) do
-        self:Push(line, width or CONTENT_WIDTH, r, g, b)
+        self:Push(line, width or contentWidth, r, g, b)
     end
 end
 
@@ -504,9 +562,9 @@ function W:RenderQuestBlock(detail, kind)
         local used = 0
         for _, paragraph in ipairs(desc) do
             if used >= MAX_DESC_LINES then break end
-            for _, line in ipairs(F.Wrap(paragraph, INDENT .. "  ", CONTENT_WIDTH - 12, self.content)) do
+            for _, line in ipairs(F.Wrap(paragraph, INDENT .. "  ", contentWidth - 12, self.content)) do
                 if used >= MAX_DESC_LINES then break end
-                self:Push(line, CONTENT_WIDTH - 12, 0.86, 0.86, 0.86)
+                self:Push(line, contentWidth - 12, 0.86, 0.86, 0.86)
                 used = used + 1
             end
         end
@@ -522,9 +580,9 @@ function W:RenderQuestBlock(detail, kind)
         local used = 0
         for _, line in ipairs(objectives) do
             if used >= MAX_OBJECTIVE_LINES then break end
-            for _, wrapped in ipairs(F.Wrap(line, INDENT .. "  - ", CONTENT_WIDTH - 12, self.content)) do
+            for _, wrapped in ipairs(F.Wrap(line, INDENT .. "  - ", contentWidth - 12, self.content)) do
                 if used >= MAX_OBJECTIVE_LINES then break end
-                self:Push(wrapped, CONTENT_WIDTH - 12, 1, 0.95, 0.75)
+                self:Push(wrapped, contentWidth - 12, 1, 0.95, 0.75)
                 used = used + 1
             end
         end
@@ -538,7 +596,7 @@ function W:RenderQuestBlock(detail, kind)
     if #rewards > 0 then
         self:Push(INDENT .. F.Hex(0.55, 0.55, 0.55, L["奖励"]))
         for _, line in ipairs(rewards) do
-            self:PushWrapped(line, INDENT .. "  ", CONTENT_WIDTH - 12, 1, 1, 1)
+            self:PushWrapped(line, INDENT .. "  ", contentWidth - 12, 1, 1, 1)
         end
     end
 
@@ -690,6 +748,12 @@ function W:Open(questId)
 
     -- 每次打开都回到默认状态：已完成的先折叠
     self.showCompleted = false
+
+    -- 分辨率可能换过、宽度也可能刚被改过，开窗前重新算一次
+    self:Create()
+    self:ResolveWidth()
+    if self.frame then self.frame:SetSize(width, HEIGHT) end
+    if self.content then self.content:SetWidth(contentWidth) end
 
     local ok, err = pcall(self.Render, self, questId)
     if not ok then

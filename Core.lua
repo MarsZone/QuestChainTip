@@ -24,6 +24,8 @@ local DEFAULTS = {
     showPrereq = true,      -- 是否显示前置任务
     panelMode = "map",      -- 悬停面板：off=关闭 / map=仅世界地图（默认） / all=全部位置
     chainKey = "SHIFT",     -- 详情窗快捷键：SHIFT / CTRL / ALT / NONE（不启用）
+    panelWidth = 380,       -- 悬停面板文本列宽（像素，240~560）
+    windowWidth = "AUTO",   -- 详情窗宽度："AUTO"（按屏幕）或 420~900 的像素值
     descLines = 3,          -- 悬停面板最多显示几行描述
     chainDepth = 3,         -- 悬停面板最多显示几层后续
     chainDepthShift = 20,   -- 详情窗（地图上按 Shift）最多列多少环
@@ -261,6 +263,8 @@ local function PrintHelp()
     QCT:Print(L["  |cffffff00/qct trace|r - 打印后台日志（默认一直在记，无需开启）"])
     QCT:Print(L["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"])
     QCT:Print(L["  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"])
+    QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
+    QCT:Print(L["  |cffffff00/qct pwidth <240-560>|r - 悬停面板宽度"])
 end
 
 SLASH_QUESTCHAINTIP1 = "/qct"
@@ -293,6 +297,40 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
             local label = (QCT.Tooltip and QCT.Tooltip.ChainKeyLabel and QCT.Tooltip.ChainKeyLabel()) or want
             QCT:Print(L.F("详情窗快捷键: %s", label))
         end
+    elseif cmd == "width" then
+        -- 详情窗宽度：auto 按屏幕算，也可以钉死一个像素值
+        local want = (rest or ""):gsub("%s+", "")
+        if want:lower() == "auto" then
+            QCT.db.windowWidth = "AUTO"
+        else
+            local n = tonumber(want)
+            if not n then
+                QCT:Print(L["用法: /qct width <auto|420-900>"])
+                return
+            end
+            if n < 420 then n = 420 end
+            if n > 900 then n = 900 end
+            QCT.db.windowWidth = math.floor(n)
+        end
+        if QCT.Window and QCT.Window.ApplyWidth then
+            pcall(QCT.Window.ApplyWidth, QCT.Window)
+        end
+        local shown = QCT.Window and QCT.Window.ResolveWidth and QCT.Window:ResolveWidth() or 0
+        QCT:Print(L.F("详情窗宽度: %d", shown))
+    elseif cmd == "pwidth" then
+        -- 悬停面板宽度（文本列宽，240~560）
+        local n = tonumber((rest or ""):gsub("%s+", ""))
+        if not n then
+            QCT:Print(L["用法: /qct pwidth <240-560>"])
+            return
+        end
+        if n < 240 then n = 240 end
+        if n > 560 then n = 560 end
+        QCT.db.panelWidth = math.floor(n)
+        if QCT.Tooltip and QCT.Tooltip.Update and GameTooltip and GameTooltip:IsShown() then
+            pcall(QCT.Tooltip.Refresh, QCT.Tooltip, true)
+        end
+        QCT:Print(L.F("悬停面板宽度: %d", QCT.db.panelWidth))
     elseif cmd == "toggle" then
         QCT.db.enabled = not QCT.db.enabled
         QCT:Print(L.F("插件已%s", L[QCT.db.enabled and "|cff00ff00开启|r" or "|cffff0000关闭|r"]))

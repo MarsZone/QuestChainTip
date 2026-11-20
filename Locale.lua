@@ -101,6 +101,12 @@ local zhTW = {
         "在世界地圖上將滑鼠移到任務圖示顯示簡介，按住 %s 開啟整條任務鏈詳情視窗；小地圖上不顯示",
     ["启用插件"] = "啟用插件",
     ["悬停面板"] = "懸停面板",
+    ["悬停面板宽度"] = "懸停面板寬度",
+    ["详情窗宽度"] = "詳情視窗寬度",
+    ["自动"] = "自動",
+    ["窄"] = "窄",
+    ["标准"] = "標準",
+    ["宽"] = "寬",
     ["详情窗快捷键"] = "詳情視窗快捷鍵",
     ["不启用"] = "不啟用",
     ["自定义…"] = "自訂…",
@@ -187,6 +193,14 @@ local zhTW = {
     ["  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
         "  |cffffff00/qct key <shift|ctrl|alt|none|任意鍵>|r - 詳情視窗快捷鍵（預設 shift，可避開 Questie 的 Shift）",
     ["用法: /qct key <shift|ctrl|alt|none|任意键>"] = "用法: /qct key <shift|ctrl|alt|none|任意鍵>",
+    ["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"] =
+        "  |cffffff00/qct width <auto|420-900>|r - 詳情視窗寬度",
+    ["  |cffffff00/qct pwidth <240-560>|r - 悬停面板宽度"] =
+        "  |cffffff00/qct pwidth <240-560>|r - 懸停面板寬度",
+    ["用法: /qct width <auto|420-900>"] = "用法: /qct width <auto|420-900>",
+    ["用法: /qct pwidth <240-560>"] = "用法: /qct pwidth <240-560>",
+    ["详情窗宽度: %d"] = "詳情視窗寬度: %d",
+    ["悬停面板宽度: %d"] = "懸停面板寬度: %d",
     ["详情窗快捷键: %s"] = "詳情視窗快捷鍵: %s",
     ["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"] =
         "  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切換介面語言",
@@ -265,6 +279,12 @@ local enUS = {
         "Hover a world map quest marker for the summary panel, hold %s for the full chain window. Never shown on the minimap.",
     ["启用插件"] = "Enable addon",
     ["悬停面板"] = "Hover panel",
+    ["悬停面板宽度"] = "Panel width",
+    ["详情窗宽度"] = "Window width",
+    ["自动"] = "Auto",
+    ["窄"] = "Narrow",
+    ["标准"] = "Standard",
+    ["宽"] = "Wide",
     ["详情窗快捷键"] = "Chain window key",
     ["不启用"] = "Disabled",
     ["自定义…"] = "Custom...",
@@ -351,6 +371,14 @@ local enUS = {
     ["  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"] =
         "  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - chain window key (default shift; avoids Questie's Shift)",
     ["用法: /qct key <shift|ctrl|alt|none|任意键>"] = "Usage: /qct key <shift|ctrl|alt|none|any key>",
+    ["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"] =
+        "  |cffffff00/qct width <auto|420-900>|r - chain window width",
+    ["  |cffffff00/qct pwidth <240-560>|r - 悬停面板宽度"] =
+        "  |cffffff00/qct pwidth <240-560>|r - hover panel width",
+    ["用法: /qct width <auto|420-900>"] = "Usage: /qct width <auto|420-900>",
+    ["用法: /qct pwidth <240-560>"] = "Usage: /qct pwidth <240-560>",
+    ["详情窗宽度: %d"] = "Chain window width: %d",
+    ["悬停面板宽度: %d"] = "Panel width: %d",
     ["详情窗快捷键: %s"] = "Chain window key: %s",
     ["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"] =
         "  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - switch UI language",

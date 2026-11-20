@@ -14,10 +14,32 @@ local T = {}
 QCT.Tooltip = T
 
 local PANEL_NAME = "QuestChainTipPanel"
-local TEXT_WIDTH = 330      -- 文本列宽
 local PAD_X, PAD_Y = 10, 8
 local LINE_HEIGHT = 15
 local MAX_ROWS = 42
+
+--------------------------------------------------------------------------------
+-- 面板宽度
+--
+-- 原来写死 330：任务名或奖励物品一长就被迫折行，「抢救数据」那种短名字也会
+-- 被右侧的经验/金钱挤到第二行。现在由配置决定，默认 380（比原来宽 50px）。
+-- 注意这里的 textWidth 是 upvalue，Build/Layout 都读它，改配置后由 Update 刷新。
+--------------------------------------------------------------------------------
+
+local DEFAULT_TEXT_WIDTH = 380
+local MIN_TEXT_WIDTH, MAX_TEXT_WIDTH = 240, 560
+local textWidth = DEFAULT_TEXT_WIDTH
+
+---把配置值解析成实际像素；非法值/缺失都回落到默认宽度
+local function ResolveTextWidth()
+    local value = tonumber(QCT.db and QCT.db.panelWidth)
+    if not value then value = DEFAULT_TEXT_WIDTH end
+    if value < MIN_TEXT_WIDTH then value = MIN_TEXT_WIDTH end
+    if value > MAX_TEXT_WIDTH then value = MAX_TEXT_WIDTH end
+    return value
+end
+T.ResolveTextWidth = ResolveTextWidth
+T.DEFAULT_TEXT_WIDTH = DEFAULT_TEXT_WIDTH
 
 --------------------------------------------------------------------------------
 -- 详情窗快捷键
@@ -221,9 +243,11 @@ end
 function T:CreatePanel()
     if self.panel then return self.panel end
 
+    textWidth = ResolveTextWidth()
+
     local template = BackdropTemplateMixin and "BackdropTemplate" or nil
     local panel = CreateFrame("Frame", PANEL_NAME, UIParent, template)
-    panel:SetSize(TEXT_WIDTH + PAD_X * 2, 80)
+    panel:SetSize(textWidth + PAD_X * 2, 80)
     panel:SetFrameStrata("TOOLTIP")
     panel:SetFrameLevel(500)
     panel:SetClampedToScreen(true)
@@ -345,12 +369,12 @@ function T:Layout(content)
         end
 
         -- 先按满宽量一次，拿到「不换行时左边这行要多宽」。
-        -- 之前直接把左边挤到 TEXT_WIDTH - rightWidth，任务名一长就被切成两行：
+        -- 之前直接把左边挤到 textWidth - rightWidth，任务名一长就被切成两行：
         -- 最后一个字掉到下一行，又被面板高度裁掉，看着像排版错乱
         -- （比如「抢救数据」显示成「抢救数」，底边框外露出一个「据」）。
-        row.left:SetWidth(TEXT_WIDTH)
+        row.left:SetWidth(textWidth)
         local natural = row.left:GetStringWidth() or 0
-        local stacked = rightWidth > 0 and (natural + rightWidth + 6) > TEXT_WIDTH
+        local stacked = rightWidth > 0 and (natural + rightWidth + 6) > textWidth
 
         local height
         if stacked then
@@ -365,7 +389,7 @@ function T:Layout(content)
             if h2 <= 0 then h2 = LINE_HEIGHT end
             height = h1 + h2
         else
-            local leftWidth = TEXT_WIDTH - rightWidth - 6
+            local leftWidth = textWidth - rightWidth - 6
             if leftWidth < 60 then leftWidth = 60 end
             row.left:SetWidth(leftWidth)
 
@@ -391,7 +415,7 @@ function T:Layout(content)
         row:Hide()
     end
 
-    panel:SetWidth(TEXT_WIDTH + PAD_X * 2)
+    panel:SetWidth(textWidth + PAD_X * 2)
     -- 底部多留 3px：行高累加本身有细微误差，且底边框的下沿需要呼吸空间
     panel:SetHeight(math.max(40, -y + PAD_Y + 3))
 end
@@ -439,6 +463,9 @@ end
 
 ---按当前状态重建面板内容
 function T:Update(questId)
+    -- 宽度可能被玩家在设置里改过，每次重建都重新取一次
+    textWidth = ResolveTextWidth()
+
     if not QCT.db.enabled then
         self:Hide()
         return
@@ -523,7 +550,7 @@ function T:Build(questId)
         local truncated = false
         for _, paragraph in ipairs(desc) do
             if used >= maxLines then truncated = true break end
-            for _, wrapped in ipairs(F.Wrap(paragraph, INDENT, TEXT_WIDTH - 10, nil)) do
+            for _, wrapped in ipairs(F.Wrap(paragraph, INDENT, textWidth - 10, nil)) do
                 if used >= maxLines then truncated = true break end
                 addLine(wrapped, 0.86, 0.86, 0.86)
                 used = used + 1
