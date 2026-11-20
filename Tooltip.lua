@@ -966,8 +966,25 @@ local function QuestLogRoots()
         end
     end)
 
-    questLogRoots, questLogRootsAt = list, now
-    return list
+    -- 只留「根」：父子都在名单里时，父帧才是日志本体。
+    -- 玩家实测播报里前六名全是 `QuestLogPopupDetailFrameInset` 这种小件，
+    -- 真正的日志帧被挤到第七名以后 —— 播报等于白播。
+    local roots = {}
+    for _, frame in ipairs(list) do
+        local nested, depth = false, 0
+        local ok, parent = pcall(function() return frame:GetParent() end)
+        local node = ok and parent or nil
+        while node and depth < 8 do
+            if seen[node] then nested = true; break end
+            local pok, nextParent = pcall(function() return node:GetParent() end)
+            node = pok and nextParent or nil
+            depth = depth + 1
+        end
+        if not nested then roots[#roots + 1] = frame end
+    end
+
+    questLogRoots, questLogRootsAt = roots, now
+    return roots
 end
 T.QuestLogRoots = QuestLogRoots
 
@@ -1120,6 +1137,97 @@ local function FindHoveredRow(frame, depth)
     return nil
 end
 
+---鼠标正压着的帧（不依赖 GetMouseFocus）。
+---
+---为什么非要这么干：这个客户端**根本没有 GetMouseFocus**（玩家实测 `/qct qlog`
+---里「GetMouseFocus: 无」），所以 1.5.18~1.5.23 里所有「问鼠标焦点」的路子全是死的，
+---按 Alt 永远拿不到任何帧。唯一还能用的办法是 EnumerateFrames 全量遍历一遍，
+---逐个问帧自己的 IsMouseOver()。代价是慢，但只在按键那一刻跑一次（MODIFIER_STATE_CHANGED
+---每次按键只触发一次），不会掉帧。
+---@param maxCount number? 最多返回几个（默认全部）
+---@return table[] frames 层级高的在前（真正压在鼠标最上面的排第一）
+local function HoveredFrames(maxCount)
+    local list = {}
+    if type(EnumerateFrames) ~= "function" then return list end
+
+    local guard = 0
+    pcall(function()
+        local current = nil
+        while true do
+            local nextFrame = EnumerateFrames(current)
+            if not nextFrame then break end
+            current = nextFrame
+            guard = guard + 1
+            if guard > 30000 then break end
+
+            local over = false
+            if type(nextFrame.IsMouseOver) == "function" then
+                local ok, value = pcall(nextFrame.IsMouseOver, nextFrame)
+                if ok then over = value and true or false end
+            end
+            if not over and type(MouseIsOver) == "function" then
+                local ok, value = pcall(MouseIsOver, nextFrame)
+                if ok then over = value and true or false end
+            end
+
+            if over and IsReallyShown(nextFrame) then
+                list[#list + 1] = nextFrame
+            end
+        end
+    end)
+
+    table.sort(list, function(a, b)
+        local la = SafeMethodNumber(a, "GetFrameLevel") or 0
+        local lb = SafeMethodNumber(b, "GetFrameLevel") or 0
+        return la > lb
+    end)
+
+    if maxCount and #list > maxCount then
+        local trimmed = {}
+        for index = 1, maxCount do trimmed[index] = list[index] end
+        return trimmed
+    end
+    return list
+end
+T.HoveredFrames = HoveredFrames
+
+---从一个「鼠标压着的帧」推任务 ID。
+---先看帧上有没有现成的任务 ID 字段（Questie 追踪条、服务器自定义任务列表都这么存），
+---再沿祖先链找「算任务日志行」的帧，用它的 GetID() 当日志索引去换任务 ID。
+---@return number? questId, string? source
+local function QuestIdFromHoveredFrame(frame)
+    if not frame then return nil, nil end
+
+    for _, key in ipairs({ "questId", "questID", "QuestId", "questid" }) do
+        local value = SafeNumber(frame, key)
+        if value then return value, "鼠标下帧字段 " .. key end
+    end
+
+    -- 服务器的任务搜索列表（DungeonsForeverQuest）把整条记录挂在 row.rec 上
+    local recOk, rec = pcall(function() return frame.rec end)
+    if recOk and type(rec) == "table" then
+        local value = SafeNumber(rec, "id") or SafeNumber(rec, "Id")
+        if value then return value, "鼠标下 rec.id" end
+    end
+
+    local node, depth = frame, 0
+    while node and depth < 8 do
+        if IsQuestLogButton(node) then
+            local index = SafeMethodNumber(node, "GetID")
+            local questId = index and QuestIdFromLogIndex(index)
+            if questId then
+                return questId, "鼠标下日志行 " .. (SafeName(node) or "<无名>")
+                    .. " 索引 " .. index
+            end
+        end
+        local ok, parent = pcall(function() return node:GetParent() end)
+        node = ok and parent or nil
+        depth = depth + 1
+    end
+
+    return nil, nil
+end
+
 ---鼠标现在压在哪条任务日志上？返回 questId 和一句来源说明。
 ---三条路，前一条走不通就走下一条：
 ---  1) 鼠标焦点帧（含祖先）的 GetID() → 任务日志索引
@@ -1128,6 +1236,15 @@ end
 ---@return number? questId, string? source
 function T:QuestIdUnderMouse()
     local logShown = QuestLogShown()
+
+    -- 0) 鼠标正压着的帧 —— 全量遍历 + IsMouseOver，不需要 GetMouseFocus。
+    --    放在最前面：玩家停在 A 行上按 Alt，心里想的就是 A，
+    --    哪怕他之前点选过 B，也不该给他弹 B。
+    local hovered = HoveredFrames(8)
+    for _, frame in ipairs(hovered) do
+        local questId, why = QuestIdFromHoveredFrame(frame)
+        if questId then return questId, why end
+    end
 
     -- 0) 任务日志里「选中」的那一条。
     --    点一下任务行就会选中；这条路不需要钩子、不需要 GetMouseFocus、
@@ -1165,6 +1282,22 @@ function T:QuestIdUnderMouse()
                 local pok, parent = pcall(function() return node:GetParent() end)
                 node = pok and parent or nil
                 depth = depth + 1
+            end
+        end
+    end
+
+    -- 1b) 兜底：日志开着 + 提示框正显示 + 鼠标压着一个带数字 ID 的按钮，
+    --     而这个 ID 当日志索引能换出真任务 —— 那就是任务行。
+    --     客户端没给行按钮起名字、或者改叫别的名字时，前面所有按名字的判断都会漏。
+    if logShown and tipShown then
+        for _, frame in ipairs(hovered) do
+            local kindOk, kind = pcall(frame.GetObjectType, frame)
+            if kindOk and kind == "Button" then
+                local index = SafeMethodNumber(frame, "GetID")
+                local questId = index and QuestIdFromLogIndex(index)
+                if questId then
+                    return questId, "鼠标下按钮索引 " .. index .. "（兜底）"
+                end
             end
         end
     end
@@ -1229,6 +1362,16 @@ end
 ---一个条件都不满足，于是「从来不出声」——玩家只知道按了没反应，我们这边什么证据都没有。
 local lastMissAt = 0
 
+---一行描述一个帧：名字(类型:ID)。播报用，越短越好。
+local function DescribeFrameShort(frame)
+    if not frame then return "?" end
+    local kind = "?"
+    local ok, value = pcall(frame.GetObjectType, frame)
+    if ok and type(value) == "string" then kind = value end
+    local id = SafeMethodNumber(frame, "GetID")
+    return (SafeName(frame) or "<无名>") .. "(" .. kind .. (id and (":" .. id) or "") .. ")"
+end
+
 function T:ExplainQuestLogMiss()
     local now = type(GetTime) == "function" and GetTime() or 0
     if now - lastMissAt < 6 then return end
@@ -1237,6 +1380,7 @@ function T:ExplainQuestLogMiss()
     if self.missCount > 5 then return end
 
     local roots = QuestLogRoots()
+    local logShown = QuestLogShown()
     local names = {}
     for index, frame in ipairs(roots) do
         if index > 6 then break end
@@ -1254,16 +1398,40 @@ function T:ExplainQuestLogMiss()
         if ok and type(value) == "number" then entries = value end
     end
 
+    -- 这个客户端是老函数没有、新表有的那一种：条目数和选中行都得问 C_QuestLog
+    local cq = _G.C_QuestLog
+    local cqSelected
+    if type(cq) == "table" then
+        if entries == nil and type(cq.GetNumQuestLogEntries) == "function" then
+            local ok, value = pcall(cq.GetNumQuestLogEntries)
+            if ok and type(value) == "number" then entries = value end
+        end
+        if type(cq.GetSelectedQuest) == "function" then
+            local ok, value = pcall(cq.GetSelectedQuest)
+            if ok and type(value) == "number" then cqSelected = value end
+        end
+    end
+
     local tip = _G.GameTooltip
     local tipShown = tip ~= nil and type(tip.IsShown) == "function" and tip:IsShown()
     local owner = tipShown and CurrentOwner(tip) or nil
 
     QCT:Print("按", QuestLogKeyLabel(), "没找到任务 | 日志帧:",
         #names > 0 and table.concat(names, ",") or "一个都没有",
-        "| 选中:", tostring(selection),
+        "| QuestLogFrame:", _G.QuestLogFrame and "有" or "无",
+        "| 选中:", tostring(selection), "/", tostring(cqSelected),
         "| 条目:", tostring(entries),
         "| 提示框:", tipShown and "显示" or "隐藏",
         "| 持有者:", SafeName(owner) or "无")
+
+    -- 鼠标下到底压着什么 —— 这一行才是真正能定位问题的
+    local hovered = HoveredFrames(5)
+    local hoverNames = {}
+    for index, frame in ipairs(hovered) do
+        hoverNames[index] = DescribeFrameShort(frame)
+    end
+    QCT:Print("  鼠标下:", #hoverNames > 0 and table.concat(hoverNames, " , ") or "什么都没压到",
+        "| 日志开着:", logShown and "是" or "否")
 
     local questId, source = self:QuestIdUnderMouse()
     QCT:Print("  能定位到的任务:", tostring(questId), "| 来源:", tostring(source),
@@ -1271,7 +1439,7 @@ function T:ExplainQuestLogMiss()
         "| GetSelectedQuest:", (type(_G.C_QuestLog) == "table"
             and type(_G.C_QuestLog.GetSelectedQuest) == "function") and "有" or "无",
         "| GetMouseFocus:", type(GetMouseFocus) == "function" and "有" or "无")
-    QCT:Print("  把这两行发给作者就能定位。也可以试 /qct qlog 看更详细的信息。")
+    QCT:Print("  把这两行发给作者就能定位。也可以试 /qct mouse 看更详细的信息。")
 end
 
 ---把帧的祖先链描述出来，排查「这个提示到底是谁弹的」用
@@ -2030,32 +2198,27 @@ function T:SelfTest()
 end
 
 ---`/qct mouse` 用：鼠标现在到底压在哪。
----任务日志这条路全押在 GetMouseFocus 上，所以必须能一眼看出它返回了什么。
+---这个客户端没有 GetMouseFocus，所以主角是「全量遍历 + IsMouseOver」，
+---GetMouseFocus 只作为别的客户端的补充信息打一行。
 function T:DiagnoseMouse()
     QCT:Print("---- 鼠标诊断 ----")
 
-    local focus
-    if type(GetMouseFocus) == "function" then
-        local ok, value = pcall(GetMouseFocus)
-        if ok then focus = value end
-    else
-        QCT:Print("|cffff0000这个客户端没有 GetMouseFocus|r")
-    end
+    QCT:Print("GetMouseFocus:", type(GetMouseFocus) == "function" and "有" or "没有（这个客户端没有）",
+        "| EnumerateFrames:", type(EnumerateFrames) == "function" and "有" or "没有",
+        "| MouseIsOver:", type(MouseIsOver) == "function" and "有" or "没有")
 
     QCT:Print("任务日志开着:", QuestLogShown() and "是" or "否",
-        "| 日志帧:", _G.QuestLogFrame and "有" or "无")
+        "| QuestLogFrame:", _G.QuestLogFrame and "有" or "无")
 
-    if not focus then
-        QCT:Print("鼠标焦点: 无")
-    else
-        local kind = "?"
-        local kok, value = pcall(function() return focus.GetObjectType() end)
-        if kok and type(value) == "string" then kind = value end
-        QCT:Print("鼠标焦点:", SafeName(focus) or "<无名>",
-            "| 类型:", kind,
-            "| ID:", tostring(SafeMethodNumber(focus, "GetID")),
-            "| 算任务日志行:", IsQuestLogRow(focus) and "是" or "否")
-        QCT:Print("  祖先链:", self:DescribeFrameChain(focus))
+    local hovered = HoveredFrames(10)
+    QCT:Print("鼠标压着的帧:", #hovered .. " 个")
+    for index, frame in ipairs(hovered) do
+        QCT:Print("  " .. index .. ") " .. DescribeFrameShort(frame),
+            "| 日志行:", IsQuestLogRow(frame) and "是" or "否")
+        QCT:Print("     祖先链:", self:DescribeFrameChain(frame))
+    end
+    if #hovered == 0 then
+        QCT:Print("  一个都没压到 —— 要么鼠标在空白处，要么这个客户端的 IsMouseOver 不可用。")
     end
 
     local tip = _G.GameTooltip
@@ -2096,12 +2259,25 @@ function T:DiagnoseQuestLog()
         local ok, value = pcall(GetNumQuestLogEntries)
         if ok and type(value) == "number" then entries = value end
     end
+    local cqEarly = _G.C_QuestLog
+    if entries == nil and type(cqEarly) == "table"
+        and type(cqEarly.GetNumQuestLogEntries) == "function" then
+        local ok, value = pcall(cqEarly.GetNumQuestLogEntries)
+        if ok and type(value) == "number" then entries = value end
+    end
     if type(GetQuestLink) == "function" and type(selection) == "number" and selection > 0 then
         local ok, value = pcall(GetQuestLink, selection)
         if ok and type(value) == "string" then link = value end
     end
     QCT:Print("选中行:", tostring(selection), "| 日志条目数:", tostring(entries),
         "| 选中行的链接:", link and link:sub(1, 40) or "取不到")
+
+    local hovered = HoveredFrames(5)
+    local hoverNames = {}
+    for index, frame in ipairs(hovered) do
+        hoverNames[index] = DescribeFrameShort(frame)
+    end
+    QCT:Print("鼠标下:", #hoverNames > 0 and table.concat(hoverNames, " , ") or "什么都没压到")
 
     local questId, source = self:QuestIdUnderMouse()
     QCT:Print("能定位到的任务:", tostring(questId), "| 来源:", tostring(source))

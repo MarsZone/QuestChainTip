@@ -45,6 +45,7 @@ local DEFAULTS = {
     panelWidth = 380,       -- 悬停面板文本列宽（像素，240~560）
     windowWidth = "AUTO",   -- 详情窗宽度："AUTO"（按屏幕）或 420~900 的像素值
     showHealth = false,     -- 在目标/焦点框体血条上显示「当前 / 最大」（默认关）
+    healthFloat = false,    -- 自由摆放：自己画一个可拖动的文字框（目标框是客户端自绘时用）
     minimap = true,         -- 显示小地图按钮
     minimapAngle = 220,     -- 小地图按钮角度（度，从 12 点顺时针）
     descLines = 3,          -- 悬停面板最多显示几行描述
@@ -322,6 +323,10 @@ local function PrintHelp()
     QCT:Print(L["  |cffffff00/qct health|r - 血量显示诊断（框体/血条/文字状态）"])
     QCT:Print(L["  |cffffff00/qct health <帧名>|r - 手动指定目标血量挂在哪个框体上（reset 恢复自动）"])
     QCT:Print(L["  |cffffff00/qct health scan|r - 列出所有可见框体的名字与坐标，用来找出该挂哪个"])
+    QCT:Print(L["  |cffffff00/qct health pick <序号>|r - 按 scan 列出的序号指定框体（框体没名字时用这个）"])
+    QCT:Print(L["  |cffffff00/qct health float|r - 血量数值改为可拖动摆放（目标框是客户端自绘时用这个）"])
+    QCT:Print(L["  |cffffff00/qct health auto|r - 血量数值恢复跟随框体"])
+    QCT:Print(L["  |cffffff00/qct health move|r - 重新允许拖动血量数字"])
     QCT:Print(L["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"])
     QCT:Print(L["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"])
     QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
@@ -497,10 +502,29 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
             local want = (rest or ""):gsub("^%s+", ""):gsub("%s+$", "")
             if want == "reset" then
                 QCT.Health:ClearForced()
+                if QCT.db then QCT.db.healthFloat = false end
                 QCT.Health:Refresh()
                 QCT:Print("血量显示已恢复自动选择框体")
+            elseif want == "float" then
+                -- 目标框是客户端自己画的（Lua 拿不到那个帧）时的唯一办法：
+                -- 自己画一个文字框，玩家拖到血条上
+                QCT.Health:SetFloat(true)
+            elseif want == "auto" then
+                QCT.Health:SetFloat(false)
+                QCT:Print("血量显示已改为跟随框体")
+            elseif want == "move" then
+                QCT.Health:ToggleMove()
             elseif want == "scan" then
                 QCT.Health:Scan()
+            elseif want:match("^pick%s+%d+$") then
+                -- 目标框没有名字时，用 scan 的序号直接指定
+                local number = tonumber(want:match("(%d+)"))
+                local ok, result = QCT.Health:UseFrameByIndex("target", number)
+                if ok then
+                    QCT:Print("目标血量已改为挂在:", result)
+                else
+                    QCT:Print(result or "指定失败")
+                end
             elseif want ~= "" then
                 -- /qct health <帧名>：手动指定目标框体
                 local ok, err = QCT.Health:UseFrame("target", want)

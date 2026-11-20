@@ -1058,6 +1058,20 @@ local function questIdFromIndex(index)
             end
         end
     end
+
+    -- 兜底：任务日志里 shift+点击能把任务链接贴到聊天框，说明客户端给得出这个字符串。
+    -- 从 "|Hquest:1234:21|h..." 里抠 ID，比标题反查可靠得多
+    -- （这个客户端的标题是 secret value，读出来一比较就抛错）。
+    if type(GetQuestLink) == "function" then
+        local ok, link = pcall(GetQuestLink, index)
+        if ok and type(link) == "string" then
+            local mok, num = pcall(string.match, link, "quest:(%d+)")
+            if mok and num then
+                local value = tonumber(num)
+                if value and value > 0 then return value, nil, nil end
+            end
+        end
+    end
     return nil
 end
 

@@ -6,7 +6,7 @@
 ## Notes-zhCN: 任意任务（含已接取）都能看整条任务链。在世界地图上按住快捷键（默认 Shift，可改）弹出窗口，展示整条任务链的完成条件/奖励/详情/接取与交付地点/是否副本。
 ## Notes-zhTW: 任意任務（含已接取）都能看整條任務鏈。在世界地圖上按住快捷鍵（預設 Shift，可改）彈出視窗，展示整條任務鏈的完成條件/獎勵/詳情/接取與交付地點/是否副本。
 ## Author: MarsZone
-## Version: 1.5.23
+## Version: 1.5.24
 ## Category: Quests
 ## SavedVariables: QuestChainTipDB
 ## OptionalDeps: Questie, QuestieDB

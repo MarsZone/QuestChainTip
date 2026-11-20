@@ -41,6 +41,7 @@ local zhTW = {
     ["|cff33ff99任务链提示|r: "] = "|cff33ff99任務鏈提示|r: ",
     ["任务链提示"] = "任務鏈提示",
     ["显示血量数值（目标/焦点血条上）"] = "顯示血量數值（目標/焦點血條上）",
+    ["血量数值可拖动（自由摆放）"] = "血量數值可拖動（自由擺放）",
     ["显示小地图图标"] = "顯示小地圖圖示",
     ["左键打开设置"] = "左鍵開啟設定",
     ["拖动可调整位置"] = "拖曳可調整位置",
@@ -119,6 +120,14 @@ local zhTW = {
         "  |cffffff00/qct health <幀名>|r - 手動指定目標血量掛在哪個框體上（reset 恢復自動）",
     ["  |cffffff00/qct health scan|r - 列出所有可见框体的名字与坐标，用来找出该挂哪个"] =
         "  |cffffff00/qct health scan|r - 列出所有可見框體的名字與座標，用來找出該掛哪個",
+    ["  |cffffff00/qct health pick <序号>|r - 按 scan 列出的序号指定框体（框体没名字时用这个）"] =
+        "  |cffffff00/qct health pick <序號>|r - 按 scan 列出的序號指定框體（框體沒名字時用這個）",
+    ["  |cffffff00/qct health float|r - 血量数值改为可拖动摆放（目标框是客户端自绘时用这个）"] =
+        "  |cffffff00/qct health float|r - 血量數值改為可拖動擺放（目標框是客戶端自繪時用這個）",
+    ["  |cffffff00/qct health auto|r - 血量数值恢复跟随框体"] =
+        "  |cffffff00/qct health auto|r - 血量數值恢復跟隨框體",
+    ["  |cffffff00/qct health move|r - 重新允许拖动血量数字"] =
+        "  |cffffff00/qct health move|r - 重新允許拖動血量數字",
     ["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"] =
         "  |cffffff00/qct qlog|r - 任務日誌快捷鍵診斷",
     ["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"] =
@@ -237,6 +246,7 @@ local enUS = {
     ["|cff33ff99任务链提示|r: "] = "|cff33ff99Quest Chain Tip|r: ",
     ["任务链提示"] = "Quest Chain Tip",
     ["显示血量数值（目标/焦点血条上）"] = "Show health values (target/focus bar)",
+    ["血量数值可拖动（自由摆放）"] = "Health values are draggable (free placement)",
     ["显示小地图图标"] = "Show minimap button",
     ["左键打开设置"] = "Left-click to open settings",
     ["拖动可调整位置"] = "Drag to move",
@@ -317,6 +327,14 @@ local enUS = {
         "  |cffffff00/qct health <frame>|r - force the target health text onto a specific frame (reset = auto)",
     ["  |cffffff00/qct health scan|r - 列出所有可见框体的名字与坐标，用来找出该挂哪个"] =
         "  |cffffff00/qct health scan|r - list visible frames with names and positions",
+    ["  |cffffff00/qct health pick <序号>|r - 按 scan 列出的序号指定框体（框体没名字时用这个）"] =
+        "  |cffffff00/qct health pick <n>|r - pick the frame by its number in /qct health scan",
+    ["  |cffffff00/qct health float|r - 血量数值改为可拖动摆放（目标框是客户端自绘时用这个）"] =
+        "  |cffffff00/qct health float|r - make health values draggable (client-drawn target frame)",
+    ["  |cffffff00/qct health auto|r - 血量数值恢复跟随框体"] =
+        "  |cffffff00/qct health auto|r - follow the unit frame again",
+    ["  |cffffff00/qct health move|r - 重新允许拖动血量数字"] =
+        "  |cffffff00/qct health move|r - unlock dragging again",
     ["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"] =
         "  |cffffff00/qct qlog|r - quest log hotkey diagnostics",
     ["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"] =
