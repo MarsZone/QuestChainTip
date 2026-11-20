@@ -312,6 +312,7 @@ local function PrintHelp()
     QCT:Print(L["  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"])
     QCT:Print(L["  |cffffff00/qct logkey <alt|ctrl|none>|r - 任务日志里开详情窗的键（默认 alt）"])
     QCT:Print(L["  |cffffff00/qct health|r - 血量显示诊断（框体/血条/文字状态）"])
+    QCT:Print(L["  |cffffff00/qct health <帧名>|r - 手动指定目标血量挂在哪个框体上（reset 恢复自动）"])
     QCT:Print(L["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"])
     QCT:Print(L["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"])
     QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
@@ -484,7 +485,22 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
         end
     elseif cmd == "health" then
         if QCT.Health and QCT.Health.Diagnose then
-            QCT.Health:Diagnose()
+            local want = (rest or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if want == "reset" then
+                QCT.Health:ClearForced()
+                QCT.Health:Refresh()
+                QCT:Print("血量显示已恢复自动选择框体")
+            elseif want ~= "" then
+                -- /qct health <帧名>：手动指定目标框体
+                local ok, err = QCT.Health:UseFrame("target", want)
+                if ok then
+                    QCT:Print("目标血量已改为挂在:", want)
+                else
+                    QCT:Print(err or "指定失败")
+                end
+            else
+                QCT.Health:Diagnose()
+            end
         else
             QCT:Print("血量模块未加载")
         end

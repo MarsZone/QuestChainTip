@@ -152,7 +152,28 @@ end
 -- 找框体
 --------------------------------------------------------------------------------
 
+---框体够不够大。扫 UIParent 时会有很多 0 尺寸的辅助帧，它们的 unit 字段可能也是 "target"，
+---不筛掉就会把文字挂到一个看不见的小方块上。
+local function BigEnough(frame)
+    local w, h = 0, 0
+    if type(frame.GetWidth) == "function" then
+        local ok, value = pcall(frame.GetWidth, frame)
+        if ok and type(value) == "number" then w = value end
+    end
+    if type(frame.GetHeight) == "function" then
+        local ok, value = pcall(frame.GetHeight, frame)
+        if ok and type(value) == "number" then h = value end
+    end
+    return w >= 40 and h >= 15
+end
+
 ---所有可能是「这个单位的框体」的帧，按优先级排。
+---
+---**自绘 UI 的框体排在暴雪默认框体前面**，这是 1.5.20 改的：
+---玩家装了自绘 UI 时，暴雪的 TargetFrame 往往还留着（甚至还在显示），
+---而玩家真正盯着看的是 UI 包自己那个框体。之前把 _G.TargetFrame 排第一，
+---结果血量数字叠在了玩家根本不看的那一个上面（实测：数字出现在屏幕右下角的默认框体上，
+---而玩家要的是左上角 UI 包那个）。
 local function Candidates(unit)
     local list, seen = {}, {}
     local function add(frame)
@@ -162,25 +183,36 @@ local function Candidates(unit)
         end
     end
 
-    -- 1) 暴雪默认框体
-    add(unit == "target" and _G.TargetFrame or _G.FocusFrame)
+    -- 手动指定优先（/qct health <帧名> 用）
+    if H.forced and H.forced[unit] then add(H.forced[unit]) end
 
-    -- 2) pfUI 这类 UI 包：单位框体挂在 pfUI.uf 下面
+    local blizzard = (unit == "target") and _G.TargetFrame or _G.FocusFrame
+
+    -- 1) pfUI 这类 UI 包：单位框体挂在 pfUI.uf 下面
     local pf = _G.pfUI
-    if type(pf) == "table" and type(pf.uf) == "table" then add(pf.uf[unit]) end
+    if type(pf) == "table" and type(pf.uf) == "table" then
+        local frame = pf.uf[unit]
+        if frame ~= blizzard then add(frame) end
+    end
 
-    -- 3) 兜底：在 UIParent 里扫一遍，找 unit 字段对得上、而且当前可见的
+    -- 2) 兜底：在 UIParent 里扫一遍，找 unit 字段对得上、可见、且有实际尺寸的
     local function scan(parent, depth)
         if depth > 3 or not parent or type(parent.GetChildren) ~= "function" then return end
         local ok, children = pcall(parent.GetChildren, parent)
         if not ok or type(children) ~= "table" then return end
         for _, child in ipairs(children) do
             local uok, value = pcall(function() return child.unit end)
-            if uok and value == unit and IsVisibleChain(child) then add(child) end
+            if uok and value == unit and child ~= blizzard
+                and IsVisibleChain(child) and BigEnough(child) then
+                add(child)
+            end
             scan(child, depth + 1)
         end
     end
     scan(_G.UIParent, 0)
+
+    -- 3) 暴雪默认框体放最后
+    add(blizzard)
 
     return list
 end
@@ -391,6 +423,15 @@ local function UpdateUnit(unit)
             ShowEntry(entry)
             QCT.Log:Add("health", unit, "血量数值已恢复显示")
         end
+        -- 第一次成功显示时播报一次「挂在哪个框体上」。
+        -- 玩家装了自绘 UI 时，插件自己挑的框体不一定是玩家真正在看的那个，
+        -- 让它在聊天框里说一句，比来回问「数字跑哪去了」高效得多。
+        self.announced = self.announced or {}
+        if not self.announced[unit] then
+            self.announced[unit] = true
+            QCT:Print("血量文字已挂到:", FrameName(entry.bar or entry.frame),
+                "| 所属框体:", FrameName(entry.frame))
+        end
         return
     end
 
@@ -411,6 +452,7 @@ end
 
 function H:Enable()
     self.enabled = true
+    self.announced = {}
     for _, unit in ipairs(UNITS) do
         local old = entries[unit]
         if old then HideEntry(old) end
@@ -420,6 +462,29 @@ function H:Enable()
         if entry then ShowEntry(entry) end
     end
     UpdateAll()
+end
+
+---手动指定某个单位挂到哪个帧上（`/qct health <帧名>`）。
+---自动挑选在自绘 UI 上不一定猜得准，留一个明确的口子，比反复猜快。
+---@param unit string
+---@param name string
+function H:UseFrame(unit, name)
+    local frame = _G[name]
+    if not frame then return false, "找不到帧: " .. tostring(name) end
+    self.forced = self.forced or {}
+    self.forced[unit] = frame
+    local old = entries[unit]
+    if old then HideEntry(old) end
+    entries[unit] = nil
+    lastResolve[unit] = nil
+    local entry = CreateEntry(unit)
+    if entry then ShowEntry(entry) end
+    UpdateAll()
+    return true
+end
+
+function H:ClearForced()
+    self.forced = nil
 end
 
 function H:Disable()
@@ -502,14 +567,26 @@ function H:Diagnose()
                 QCT:Print("  文字: 还没创建")
             end
 
-            -- 候选框体一览：玩家装了自绘 UI 时，看这一行就知道该往哪儿挂
+            -- 候选框体一览：玩家装了自绘 UI 时，看这一行就知道该往哪儿挂。
+            -- 带上屏幕坐标：一个单位常常有好几个框体同时可见（暴雪默认的 + UI 包的），
+            -- 光看名字分不清哪个是玩家真正在看的，坐标一看就知道。
             local candidates = Candidates(unit)
             local parts = {}
             for i, frame in ipairs(candidates) do
                 if i > 6 then break end
                 local bar = PickHealthBar(frame)
+                local left, top = 0, 0
+                if type(frame.GetLeft) == "function" then
+                    local ok, value = pcall(frame.GetLeft, frame)
+                    if ok and type(value) == "number" then left = value end
+                end
+                if type(frame.GetTop) == "function" then
+                    local ok, value = pcall(frame.GetTop, frame)
+                    if ok and type(value) == "number" then top = value end
+                end
                 parts[#parts + 1] = FrameName(frame)
                     .. (IsVisibleChain(frame) and "[显示]" or "[隐藏]")
+                    .. "(" .. math.floor(left) .. "," .. math.floor(top) .. ")"
                     .. (bar and ("+血条:" .. FrameName(bar)) or "+无血条")
             end
             QCT:Print("  候选框体:", #parts > 0 and table.concat(parts, " ; ") or "一个都没找到")
