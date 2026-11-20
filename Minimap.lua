@@ -25,10 +25,24 @@ local function GetAngle()
     return value
 end
 
+---按钮现在是不是还被小地图「拥有」。
+---小地图按钮收集器（MBB / MinimapButtonBag 之类）会把按钮 SetParent 到自己的网格里，
+---接管位置和显示。这时我们要是还按角度往小地图边缘摆，就会出现
+---「网格里留一个空格子、图标飘在外面」的怪样子（玩家截图反馈的就是这个）。
+local function StillOnMinimap(button)
+    local minimap = _G.Minimap
+    if not minimap or not button then return false end
+    if type(button.GetParent) ~= "function" then return true end
+    local ok, parent = pcall(button.GetParent, button)
+    if not ok then return true end
+    return parent == minimap
+end
+
 ---按当前角度把小按钮摆到小地图边缘
 local function Place(button)
     local minimap = _G.Minimap
     if not minimap or not button then return end
+    if not StillOnMinimap(button) then return end
 
     local width = 140
     if type(minimap.GetWidth) == "function" then
@@ -47,6 +61,7 @@ end
 local function FollowCursor(button)
     local minimap = _G.Minimap
     if not minimap then return end
+    if not StillOnMinimap(button) then return end
     if type(GetCursorPosition) ~= "function" then return end
 
     local mx, my = minimap:GetCenter()

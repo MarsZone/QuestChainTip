@@ -32,20 +32,27 @@ end
 ---框体里第一个 StatusBar 就是血条。
 ---不写死 TargetFrameTextureFrameHealthBar 这种名字：自定义 UI 会改结构，
 ---递归找更抗折腾（深度限 4 层，避免在大框体里乱爬）。
-local function FindStatusBar(frame, depth)
+---@param mustContain string? 名字里必须包含的片段（先找 "Health"，避免把法力条当血条）
+local function FindStatusBar(frame, depth, mustContain)
     depth = depth or 0
     if not frame or depth > 4 then return nil end
 
     if type(frame.GetObjectType) == "function" then
         local ok, kind = pcall(frame.GetObjectType, frame)
-        if ok and kind == "StatusBar" then return frame end
+        if ok and kind == "StatusBar" then
+            if not mustContain then return frame end
+            local nameOk, name = pcall(function() return frame:GetName() end)
+            if nameOk and type(name) == "string" and name:find(mustContain, 1, true) then
+                return frame
+            end
+        end
     end
 
     if type(frame.GetChildren) == "function" then
         local ok, children = pcall(frame.GetChildren, frame)
         if ok and type(children) == "table" then
             for _, child in ipairs(children) do
-                local found = FindStatusBar(child, depth + 1)
+                local found = FindStatusBar(child, depth + 1, mustContain)
                 if found then return found end
             end
         end
@@ -66,10 +73,16 @@ local function CreateEntry(unit)
 
     local known = (unit == "target" and _G.TargetFrameTextureFrameHealthBar)
         or (unit == "focus" and _G.FocusFrameTextureFrameHealthBar)
-    local bar = known or FindStatusBar(frame)
+    -- 先按名字找血条，再退回「第一个 StatusBar」——否则可能把法力条当血条
+    local bar = known
+        or FindStatusBar(frame, 0, "Health")
+        or FindStatusBar(frame, 0, nil)
     if not bar then return nil end
 
-    local text = frame:CreateFontString(nil, "OVERLAY")
+    -- 文字必须建在血条自己身上，不能建在 TargetFrame 上：
+    -- 血条是 TargetFrame 的子帧，子帧的绘制层级永远高于父帧的任何 layer，
+    -- 挂在父帧 OVERLAY 上的文字会被血条整个盖住（玩家反馈「血量没显示」就是这个原因）。
+    local text = bar:CreateFontString(nil, "OVERLAY")
     local path, size, flags = GetFont()
     if text.SetFont then text:SetFont(path, math.max(10, (size or 12) - 1), flags) end
     text:SetPoint("CENTER", bar, "CENTER", 0, 0)

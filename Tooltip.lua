@@ -1274,7 +1274,9 @@ end
 
 ---从「当前鼠标悬停的任务」尝试开窗。修饰键和自定义热键共用这一段。
 ---@param source string? "modifier" / "hotkey"，只用于日志区分是哪条路进来的
-function T:TryOpenFromHover(source)
+---@param viaKey string? 按下的修饰键族（SHIFT / CTRL / ALT）。
+---       传了就直接用它判断该开哪条路；没传（自定义热键）才回落到 IsXxxKeyDown 查询。
+function T:TryOpenFromHover(source, viaKey)
     local tip = _G.GameTooltip
     local shown = tip ~= nil and tip.IsShown ~= nil and tip:IsShown()
 
@@ -1320,7 +1322,19 @@ function T:TryOpenFromHover(source)
     -- 不能共用地图那个键：配成 Shift 时，Shift+点击是原生的「把任务链接贴到聊天框」，
     -- 抢掉玩家就没法复制任务链接了。
     if IsQuestLogButton(owner) then
-        if not IsQuestLogKeyDown() then
+        -- 事件已经把按下的键族传进来了，直接比，不依赖 IsAltKeyDown 这类 API
+        -- （这个客户端上那几个函数不一定可靠，之前 Shift 能用是因为恰好没走这条路）
+        local keyOk
+        if viaKey then
+            keyOk = (viaKey == QuestLogKey())
+        else
+            -- 自定义热键（source == "hotkey"）本来就不走修饰键，直接放行
+            keyOk = (source == "hotkey") or IsQuestLogKeyDown()
+        end
+        QCT.Log:Add("questlog", "任务日志开窗判定 | 按下的键:", tostring(viaKey),
+            "| 配置:", QuestLogKey(), "| 放行:", keyOk and "是" or "否",
+            "| 任务:", tostring(questId))
+        if not keyOk then
             ExplainNoWindow(owner, questId)
             return
         end
@@ -1337,6 +1351,12 @@ function T:TryOpenFromHover(source)
     end
 
     if not IsMapQuestIcon(owner) then
+        ExplainNoWindow(owner, questId)
+        return
+    end
+
+    -- 按下的如果是任务日志那个键（Alt），不要在地图上开窗
+    if viaKey and viaKey ~= ChainKey() then
         ExplainNoWindow(owner, questId)
         return
     end
@@ -1364,9 +1384,9 @@ end
 ---修饰键那条路：按下配置的键时进来。
 ---两条路各用各的键：世界地图用「详情窗快捷键」（默认 Shift），
 ---任务日志用「任务日志快捷键」（默认 Alt，避开原生 Shift+点击复制链接）。
-function T:OnModifierChanged()
-    if not (IsChainKeyDown() or IsQuestLogKeyDown()) then return end
-    self:TryOpenFromHover("modifier")
+---@param viaKey string? 按下的键族（SHIFT / CTRL / ALT），由事件直接带进来
+function T:OnModifierChanged(viaKey)
+    self:TryOpenFromHover("modifier", viaKey)
 end
 
 ---每一步单独 pcall：这个客户端上任何一个钩子挂不上，都不能连累后面的步骤。
@@ -1393,7 +1413,7 @@ function T:Enable()
             -- 只认玩家配的那两族：地图用 chainKey，任务日志用 questLogKey
             local family = KeyFamily(key)
             if family ~= ChainKey() and family ~= QuestLogKey() then return end
-            local ok, err = pcall(T.OnModifierChanged, T)
+            local ok, err = pcall(T.OnModifierChanged, T, family)
             if not ok then QCT:Debug("快捷键处理失败:", tostring(err)) end
         end)
         self.eventFrame = frame
