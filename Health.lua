@@ -59,6 +59,11 @@ local function FrameName(frame)
         local ok, name = pcall(frame.GetName, frame)
         if ok and type(name) == "string" and name ~= "" then return name end
     end
+    -- 无名帧把对象类型带上：排查时至少能分清它是 Frame 还是 StatusBar
+    if type(frame.GetObjectType) == "function" then
+        local ok, kind = pcall(frame.GetObjectType, frame)
+        if ok and type(kind) == "string" then return "<无名" .. kind .. ">" end
+    end
     return "<无名>"
 end
 
@@ -183,6 +188,44 @@ local function NameLooksLike(unit, name)
     return lower:match("focus$") ~= nil
 end
 
+---把客户端里所有帧过一遍。
+---
+---为什么需要它：玩家的目标框（左上角那个）既不在 UIParent 下、也没有名字，
+---只扫 UIParent 永远扫不到 —— `/qct health scan` 在玩家机器上只列出了一个 TargetFrame，
+---而他真正在看的那个框连名字都没有。EnumerateFrames 是客户端提供的全量遍历，
+---不管帧有没有名字、挂在谁下面，都能拿到。
+local function ForEachFrame(fn)
+    if type(EnumerateFrames) ~= "function" then return false end
+    local guard = 0
+    local ok = pcall(function()
+        local current = nil
+        while true do
+            local nextFrame = EnumerateFrames(current)
+            if not nextFrame then break end
+            current = nextFrame
+            guard = guard + 1
+            if guard > 30000 then break end
+            fn(nextFrame)
+        end
+    end)
+    return ok
+end
+
+---目标自己的姓名板。
+---
+---这是 1.5.23 的关键发现：无限服 1.60.1 是**现代 API 的客户端**（有 C_NamePlate、
+---有 C_QuestLog，但没有 8.0 就删掉的 GetQuestLogSelection）。
+---玩家截图里那个「左上角的目标框」其实是**敌方单位姓名板** ——
+---`C_NamePlate.GetNamePlateForUnit("target")` 能直接把目标那块牌子拿到手，
+---血条就在 plate.UnitFrame.healthBar 上，数字挂上去就跟着牌子走。
+local function NamePlateFor(unit)
+    local api = _G.C_NamePlate
+    if type(api) ~= "table" or type(api.GetNamePlateForUnit) ~= "function" then return nil end
+    local ok, plate = pcall(api.GetNamePlateForUnit, unit)
+    if not ok or not plate then return nil end
+    return plate
+end
+
 ---所有可能是「这个单位的框体」的帧，按优先级排。
 ---
 ---**自绘 UI 的框体排在暴雪默认框体前面**，这是 1.5.20 改的：
@@ -204,14 +247,24 @@ local function Candidates(unit)
 
     local blizzard = (unit == "target") and _G.TargetFrame or _G.FocusFrame
 
-    -- 1) pfUI 这类 UI 包：单位框体挂在 pfUI.uf 下面
+    -- 1) 目标自己的姓名板排第一。
+    --    这个客户端的目标框就是姓名板（客户端自己画的、Lua 拿不到），
+    --    而姓名板本身是 Lua 帧，能直接挂 —— 玩家看到的就是它。
+    local plate = NamePlateFor(unit)
+    if plate then
+        add(plate)
+        local pok, unitFrame = pcall(function() return plate.UnitFrame end)
+        if pok and unitFrame and unitFrame ~= plate then add(unitFrame) end
+    end
+
+    -- 2) pfUI 这类 UI 包：单位框体挂在 pfUI.uf 下面
     local pf = _G.pfUI
     if type(pf) == "table" and type(pf.uf) == "table" then
         local frame = pf.uf[unit]
         if frame ~= blizzard then add(frame) end
     end
 
-    -- 2) 兜底：在 UIParent 里扫一遍。两个判据取并集 ——
+    -- 3) 兜底：在 UIParent 里扫一遍。两个判据取并集 ——
     --    unit 字段对得上，或者名字以 target / focus 结尾。
     local function scan(parent, depth)
         if depth > 3 or not parent or type(parent.GetChildren) ~= "function" then return end
@@ -230,7 +283,25 @@ local function Candidates(unit)
     end
     scan(_G.UIParent, 0)
 
-    -- 3) 暴雪默认框体放最后
+    -- 4) 前面一无所获（只剩下暴雪默认框体）就全量遍历一次。
+    --      这一遍要过几千个帧，代价大，所以只在「一个自绘候选都没找到」时才做。
+    local custom = false
+    for _, frame in ipairs(list) do
+        if frame ~= blizzard then
+            custom = true
+            break
+        end
+    end
+    if not custom then
+        ForEachFrame(function(child)
+            if child == blizzard then return end
+            local uok, value = pcall(function() return child.unit end)
+            if not (uok and value == unit) then return end
+            if IsVisibleChain(child) and BigEnough(child) then add(child) end
+        end)
+    end
+
+    -- 5) 暴雪默认框体放最后
     add(blizzard)
 
     return list
@@ -399,7 +470,10 @@ local function EnsureEntry(unit)
     if entry and IsVisibleChain(entry.frame) then return entry end
 
     local now = type(GetTime) == "function" and GetTime() or 0
-    if entry and (now - (lastResolve[unit] or 0)) < 3 then return entry end
+    -- 注意：**即使 entry 为 nil 也必须限流**。之前写成 `if entry and ...`，
+    -- 结果「一个框体都没找到」的时候，每次 UNIT_HEALTH 都会重新扫一遍全屏
+    -- 再加一次全量帧遍历 —— 战斗中直接把帧数打爆。
+    if (now - (lastResolve[unit] or -1000)) < 3 then return entry end
     lastResolve[unit] = now
 
     local frame, bar = ResolveHost(unit)
@@ -411,8 +485,167 @@ local function EnsureEntry(unit)
     return CreateEntry(unit, frame, bar)
 end
 
+--------------------------------------------------------------------------------
+-- 自由摆放模式
+--
+-- 为什么需要它：无限服的目标框是**客户端自己画的**，Lua 里既拿不到那个帧、
+-- 它也没有名字（`/qct health scan` 在玩家机器上只列出 TargetFrame，
+-- 而玩家真正在看的那个框连名字都没有）。这种情况再怎么扫也贴不上去，
+-- 唯一的办法是自己建一个文字框，让玩家拖到血条上 —— 视觉效果一样，
+-- 而且换 UI、换分辨率都不会丢。
+--------------------------------------------------------------------------------
+
+local floatFrame, floatEntry
+
+local function EnsureFloat()
+    if floatFrame then return floatFrame end
+
+    local frame = CreateFrame("Frame", "QuestChainTipHealthText", UIParent)
+    frame:SetSize(180, 20)
+    frame:SetFrameStrata("HIGH")
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self)
+        if not self.movableNow then return end
+        self:StartMoving()
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        local point, _, relPoint, x, y = self:GetPoint(1)
+        if point and QCT.db then
+            QCT.db.healthPos = {
+                point = point,
+                relPoint = relPoint or point,
+                x = x or 0,
+                y = y or 0,
+            }
+        end
+        -- 拖一次就自动锁定：一直开着鼠标会挡住下面框体的点击
+        if self.movableNow then
+            self.movableNow = false
+            pcall(self.EnableMouse, self, false)
+            QCT:Print("血量数字位置已保存并锁定。想再挪：/qct health move")
+        end
+    end)
+
+    local pos = QCT.db and QCT.db.healthPos
+    if type(pos) == "table" and pos.point then
+        frame:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x or 0, pos.y or 0)
+    else
+        -- 默认放在屏幕上方正中：绝大多数客户端的目标框都在这个位置，
+        -- 玩家装上就能看到，再微调一下即可。
+        frame:SetPoint("TOP", UIParent, "TOP", 0, -70)
+    end
+
+    local fontPath, fontSize, fontFlags = GetFont()
+    local function segment(justify, anchor, x)
+        local fontString = frame:CreateFontString(nil, "OVERLAY")
+        if fontString.SetFont then
+            fontString:SetFont(fontPath, math.max(13, (fontSize or 12) + 1), fontFlags)
+        end
+        if fontString.SetJustifyH then fontString:SetJustifyH(justify) end
+        if fontString.SetWidth then fontString:SetWidth(90) end
+        fontString:SetTextColor(1, 1, 1)
+        if fontString.SetShadowColor then fontString:SetShadowColor(0, 0, 0, 1) end
+        if fontString.SetShadowOffset then fontString:SetShadowOffset(1, -1) end
+        fontString:SetPoint(anchor, frame, "CENTER", x, 0)
+        return fontString
+    end
+
+    floatEntry = {
+        cur = segment("RIGHT", "RIGHT", -8),
+        sep = segment("CENTER", "CENTER", 0),
+        max = segment("LEFT", "LEFT", 8),
+    }
+    floatEntry.sep:SetText("/")
+    floatEntry.cur:SetText("")
+    floatEntry.max:SetText("")
+
+    floatFrame = frame
+    return frame
+end
+
+---自由模式下的刷新。只跟 target（焦点跟它叠在一起没意义）。
+local function UpdateFloat()
+    if not (QCT.db and QCT.db.showHealth and QCT.db.healthFloat) then return end
+    EnsureFloat()
+    local entry = floatEntry
+    if not entry then return end
+
+    if not UnitExistsSafe("target") then
+        pcall(entry.cur.SetText, entry.cur, "")
+        pcall(entry.max.SetText, entry.max, "")
+        return
+    end
+
+    local cur = NumberOf(UnitHealth, "target")
+    local max = NumberOf(UnitHealthMax, "target")
+    if cur == nil or max == nil then return end
+    ShowValue(entry.cur, cur)
+    ShowValue(entry.max, max)
+end
+
+---切换到 / 离开自由摆放模式
+---@param enabled boolean
+function H:SetFloat(enabled)
+    enabled = enabled and true or false
+    if QCT.db then QCT.db.healthFloat = enabled end
+
+    if enabled then
+        -- 关掉「跟随框体」那套，避免两处数字同时出现
+        for _, unit in ipairs(UNITS) do
+            local old = entries[unit]
+            if old then HideEntry(old) end
+            entries[unit] = nil
+            lastResolve[unit] = nil
+        end
+        local frame = EnsureFloat()
+        pcall(frame.Show, frame)
+        -- 切过来就允许拖动，拖一次自动锁定，省得玩家再去找命令
+        frame.movableNow = true
+        pcall(frame.EnableMouse, frame, true)
+        UpdateFloat()
+        QCT:Print("血量数值改为自由摆放：|cffffff00按住数字拖动|r，松手自动保存并锁定。")
+        QCT:Print("想回到跟随框体：/qct health auto")
+    else
+        if floatFrame then
+            pcall(floatFrame.EnableMouse, floatFrame, false)
+            floatFrame.movableNow = false
+            if floatEntry then
+                pcall(floatEntry.cur.SetText, floatEntry.cur, "")
+                pcall(floatEntry.max.SetText, floatEntry.max, "")
+            end
+            pcall(floatFrame.Hide, floatFrame)
+        end
+        self:Refresh()
+    end
+end
+
+---重新允许拖动（拖一次会自动锁定）
+function H:ToggleMove()
+    if not (QCT.db and QCT.db.healthFloat) then
+        QCT:Print("当前不是自由摆放模式。先执行 /qct health float")
+        return
+    end
+    local frame = EnsureFloat()
+    frame.movableNow = not frame.movableNow
+    pcall(frame.EnableMouse, frame, frame.movableNow)
+    if frame.movableNow then
+        QCT:Print("现在可以拖动血量数字了，松手自动保存。")
+    else
+        QCT:Print("已锁定位置。")
+    end
+end
+
 local function UpdateUnit(unit)
     if not (QCT.db and QCT.db.showHealth) then return end
+
+    -- 自由摆放模式下不碰任何框体，只刷新自己那个文字框
+    if QCT.db.healthFloat then
+        if unit == "target" then UpdateFloat() end
+        return
+    end
 
     local entry = entries[unit]
 
@@ -427,10 +660,10 @@ local function UpdateUnit(unit)
     entry = EnsureEntry(unit)
     if not entry then
         -- 一个候选框体都没找到：说一声，否则玩家只会觉得「功能没生效」
-        self.announced = self.announced or {}
+        H.announced = H.announced or {}
         local key = unit .. ":noframe"
-        if not self.announced[key] then
-            self.announced[key] = true
+        if not H.announced[key] then
+            H.announced[key] = true
             QCT:Print("没找到可用的", unit, "框体，血量数字无处可挂。用 /qct health scan 看看有哪些框体。")
         end
         return
@@ -454,9 +687,12 @@ local function UpdateUnit(unit)
         -- 第一次成功显示时播报一次「挂在哪个框体上」。
         -- 玩家装了自绘 UI 时，插件自己挑的框体不一定是玩家真正在看的那个，
         -- 让它在聊天框里说一句，比来回问「数字跑哪去了」高效得多。
-        self.announced = self.announced or {}
-        if not self.announced[unit] then
-            self.announced[unit] = true
+        -- 注意这里必须用 H.announced：UpdateUnit 是普通函数、没有 self，
+        -- 之前写成 self.announced 会抛「attempt to index a nil value」，
+        -- 被外层 pcall 吞掉 —— 数字照常显示，但这一行播报永远不会出现。
+        H.announced = H.announced or {}
+        if not H.announced[unit] then
+            H.announced[unit] = true
             QCT:Print("血量文字已挂到:", FrameName(entry.bar or entry.frame),
                 "| 所属框体:", FrameName(entry.frame))
         end
@@ -487,9 +723,49 @@ function H:Enable()
         if old then HideEntry(old) end
         entries[unit] = nil
         lastResolve[unit] = nil
-        local entry = CreateEntry(unit)
-        if entry then ShowEntry(entry) end
+        -- 自由摆放模式不建「跟随框体」的文字
+        if not (QCT.db and QCT.db.healthFloat) then
+            local entry = CreateEntry(unit)
+            if entry then ShowEntry(entry) end
+        end
     end
+    if QCT.db and QCT.db.healthFloat then
+        local frame = EnsureFloat()
+        pcall(frame.Show, frame)
+        -- 从设置面板勾上「可拖动」时，直接进入可拖状态并提示一次，
+        -- 否则玩家勾完发现拖不动，还得自己去找命令
+        if not self.floatHinted then
+            self.floatHinted = true
+            frame.movableNow = true
+            pcall(frame.EnableMouse, frame, true)
+            QCT:Print("血量数值为自由摆放：|cffffff00按住数字拖动|r即可移动，松手自动保存并锁定。")
+        end
+    end
+    UpdateAll()
+end
+
+---把手动指定的框体挂上去（按名字和按序号两条入口共用）
+local function AttachForced(unit, frame)
+    -- 手动指定框体就意味着要「跟随框体」，先退出自由摆放
+    if QCT.db then QCT.db.healthFloat = false end
+    if floatFrame then
+        pcall(floatFrame.EnableMouse, floatFrame, false)
+        floatFrame.movableNow = false
+        if floatEntry then
+            pcall(floatEntry.cur.SetText, floatEntry.cur, "")
+            pcall(floatEntry.max.SetText, floatEntry.max, "")
+        end
+        pcall(floatFrame.Hide, floatFrame)
+    end
+
+    H.forced = H.forced or {}
+    H.forced[unit] = frame
+    local old = entries[unit]
+    if old then HideEntry(old) end
+    entries[unit] = nil
+    lastResolve[unit] = nil
+    local entry = CreateEntry(unit)
+    if entry then ShowEntry(entry) end
     UpdateAll()
 end
 
@@ -500,16 +776,23 @@ end
 function H:UseFrame(unit, name)
     local frame = _G[name]
     if not frame then return false, "找不到帧: " .. tostring(name) end
-    self.forced = self.forced or {}
-    self.forced[unit] = frame
-    local old = entries[unit]
-    if old then HideEntry(old) end
-    entries[unit] = nil
-    lastResolve[unit] = nil
-    local entry = CreateEntry(unit)
-    if entry then ShowEntry(entry) end
-    UpdateAll()
+    AttachForced(unit, frame)
     return true
+end
+
+---`/qct health pick <序号>`：按 `/qct health scan` 列出的序号指定。
+---为什么需要它：玩家那个目标框**没有名字**，`/qct health <帧名>` 根本无从下手；
+---序号可以直接把「屏幕上你看到的那个」指过来，不需要知道它叫什么。
+---@param unit string
+---@param index number
+function H:UseFrameByIndex(unit, index)
+    local list = self.scanList
+    if not list or not list[index] then
+        return false, "没有第 " .. tostring(index) .. " 项，先执行 /qct health scan"
+    end
+    local item = list[index]
+    AttachForced(unit, item.frame)
+    return true, item.name
 end
 
 function H:ClearForced()
@@ -521,6 +804,15 @@ function H:Disable()
     for _, entry in pairs(entries) do
         HideEntry(entry)
         entry.blocked = false
+    end
+    if floatFrame then
+        if floatEntry then
+            pcall(floatEntry.cur.SetText, floatEntry.cur, "")
+            pcall(floatEntry.max.SetText, floatEntry.max, "")
+        end
+        pcall(floatFrame.EnableMouse, floatFrame, false)
+        floatFrame.movableNow = false
+        pcall(floatFrame.Hide, floatFrame)
     end
 end
 
@@ -540,6 +832,10 @@ function H:Init()
     frame:RegisterEvent("PLAYER_FOCUS_CHANGED")
     frame:RegisterEvent("UNIT_HEALTH")
     frame:RegisterEvent("UNIT_MAXHEALTH")
+    -- 姓名板会随怪物进出视野不断重建：牌子换了对象，我们挂在上面的文字就跟着没了。
+    -- 这两个事件到了就把「重新挑框体」的限流清掉，让下一次血量更新重新挂到新牌子上。
+    pcall(frame.RegisterEvent, frame, "NAME_PLATE_UNIT_ADDED")
+    pcall(frame.RegisterEvent, frame, "NAME_PLATE_UNIT_REMOVED")
     frame:SetScript("OnEvent", function(_, event, unit)
         if not (QCT.db and QCT.db.showHealth) then return end
         if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
@@ -547,6 +843,11 @@ function H:Init()
                 local ok, err = pcall(UpdateUnit, unit)
                 if not ok and QCT.Log then QCT.Log:Add("health", "事件更新失败:", Safe(err)) end
             end
+            return
+        end
+        if event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
+            for _, key in ipairs(UNITS) do lastResolve[key] = nil end
+            UpdateAll()
             return
         end
         UpdateAll()
@@ -562,63 +863,104 @@ function H:GetEntry(unit)
     return entries[unit]
 end
 
----`/qct health scan` 用：把所有**看得见的、够大的**具名框体列出来（带屏幕坐标）。
----自动挑选在自绘 UI 上不一定猜得准，这时候让玩家按坐标认出「我要的是这个」，
----再用 /qct health <帧名> 指定，比来回猜快得多。
+---测试用：自由摆放模式下的三段文字（cur / sep / max）
+function H:GetFloatEntry()
+    return floatEntry
+end
+
+local function SizeOf(frame)
+    local w, h = 0, 0
+    if type(frame.GetWidth) == "function" then
+        local ok, value = pcall(frame.GetWidth, frame)
+        if ok and type(value) == "number" then w = value end
+    end
+    if type(frame.GetHeight) == "function" then
+        local ok, value = pcall(frame.GetHeight, frame)
+        if ok and type(value) == "number" then h = value end
+    end
+    return w, h
+end
+
+local function PositionOf(frame)
+    local left, top = 0, 0
+    if type(frame.GetLeft) == "function" then
+        local ok, value = pcall(frame.GetLeft, frame)
+        if ok and type(value) == "number" then left = value end
+    end
+    if type(frame.GetTop) == "function" then
+        local ok, value = pcall(frame.GetTop, frame)
+        if ok and type(value) == "number" then top = value end
+    end
+    return left, top
+end
+
+---`/qct health scan` 用：把所有**看得见的、够大的**框体按屏幕位置列出来。
+---
+---1.5.22 起**无名帧也列**（走 EnumerateFrames 全量遍历）：
+---玩家那个目标框没有名字，旧版只列具名帧，所以列表里只有 TargetFrame 一个，
+---根本找不到他要的那个。现在每项带序号，用 /qct health pick <序号> 直接指过去。
 function H:Scan()
     QCT:Print("---- 可见框体一览（按屏幕位置排序） ----")
 
-    local list = {}
+    local list, seen = {}, {}
+    local function add(frame)
+        if not frame or seen[frame] then return end
+        seen[frame] = true
+        local name = FrameName(frame)
+        -- 整屏容器永远可见、永远最大，列出来只会把真候选挤到后面
+        if name == "UIParent" or name == "WorldFrame" then return end
+        -- 先看尺寸：绝大多数帧都过不了这一关，比查可见性便宜
+        local w, h = SizeOf(frame)
+        if w < 60 or h < 18 then return end
+        if not IsVisibleChain(frame) then return end
+        local left, top = PositionOf(frame)
+        list[#list + 1] = {
+            frame = frame,
+            name = name,
+            left = left,
+            top = top,
+            w = w,
+            h = h,
+            hasBar = PickHealthBar(frame) ~= nil,
+        }
+    end
+
+    -- 1) 先在 UIParent 里走一遍（快，覆盖绝大多数界面）
     local function walk(parent, depth)
         if depth > 3 or not parent or type(parent.GetChildren) ~= "function" then return end
         local ok, children = pcall(parent.GetChildren, parent)
         if not ok or type(children) ~= "table" then return end
         for _, child in ipairs(children) do
-            local name = FrameName(child)
-            if name ~= "<无名>" and name ~= "?" and IsVisibleChain(child) and BigEnough(child) then
-                local itemOk, item = pcall(function()
-                    local left, top, w, h = 0, 0, 0, 0
-                    if type(child.GetLeft) == "function" then
-                        local v = child:GetLeft()
-                        if type(v) == "number" then left = v end
-                    end
-                    if type(child.GetTop) == "function" then
-                        local v = child:GetTop()
-                        if type(v) == "number" then top = v end
-                    end
-                    if type(child.GetWidth) == "function" then
-                        local v = child:GetWidth()
-                        if type(v) == "number" then w = v end
-                    end
-                    if type(child.GetHeight) == "function" then
-                        local v = child:GetHeight()
-                        if type(v) == "number" then h = v end
-                    end
-                    return { name = name, left = left, top = top, w = w, h = h,
-                        hasBar = PickHealthBar(child) ~= nil }
-                end)
-                if itemOk and item and item.w >= 60 and item.h >= 18 then
-                    list[#list + 1] = item
-                end
-            end
+            add(child)
             walk(child, depth + 1)
         end
     end
     walk(_G.UIParent, 0)
+
+    -- 2) 再全量遍历：无名帧、挂在 WorldFrame 之类下面的帧只能靠这一遍找到
+    local full = ForEachFrame(add)
 
     table.sort(list, function(a, b)
         if math.abs(a.top - b.top) > 5 then return a.top < b.top end
         return a.left < b.left
     end)
 
+    self.scanList = list
     for index, item in ipairs(list) do
         if index > 30 then break end
-        QCT:Print("  " .. item.name,
-            "位置(" .. item.left .. "," .. item.top .. ")",
-            "尺寸" .. item.w .. "x" .. item.h,
+        QCT:Print("  " .. index .. ". " .. item.name,
+            "位置(" .. math.floor(item.left) .. "," .. math.floor(item.top) .. ")",
+            "尺寸" .. math.floor(item.w) .. "x" .. math.floor(item.h),
             item.hasBar and "[有血条]" or "")
     end
-    QCT:Print("共", #list, "个。找到你要的那个后：/qct health <帧名> 指定，/qct health reset 恢复自动")
+    if #list == 0 then
+        QCT:Print("  一个都没找到。")
+    end
+    if not full then
+        QCT:Print("  （这个客户端没有 EnumerateFrames，只能扫到 UIParent 里的具名帧）")
+    end
+    QCT:Print("共", #list, "个。找到目标框后：/qct health pick <序号> 指定；/qct health reset 恢复自动")
+    QCT:Print("如果它确实贴不上去：/qct health float 改成可拖动的数字，拖到血条上即可。")
 end
 
 ---`/qct health` 用：把「框体找没找到 / 血条找没找到 / 文字状态」全打出来。
@@ -627,7 +969,8 @@ end
 ---上一版就是这样 —— 只打出「开关: true」两行，后面的全没了，等于没诊断。
 function H:Diagnose()
     QCT:Print("---- 血量诊断 ----")
-    QCT:Print("开关:", Safe(QCT.db and QCT.db.showHealth))
+    QCT:Print("开关:", Safe(QCT.db and QCT.db.showHealth),
+        "| 自由摆放:", Safe(QCT.db and QCT.db.healthFloat))
 
     for _, unit in ipairs(UNITS) do
         local ok, err = pcall(function()

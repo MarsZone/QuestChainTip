@@ -1,5 +1,42 @@
 # 更新日志 / Changelog
 
+## 1.5.23
+
+**终于搞清楚了：这是「现代 API 的客户端」，那个目标框其实是姓名板**
+
+- **血量数字挂到目标的姓名板上**：无限服 1.60.1 有 `C_NamePlate`，
+  `C_NamePlate.GetNamePlateForUnit("target")` 能直接拿到目标那块牌子，
+  血条在 `plate.UnitFrame.healthBar`。姓名板现在是**第一候选**，
+  数字挂在牌子上跟着牌子走；牌子换对象（怪物进出视野）时会自动重挂
+  - 顺带：`FrameName` 对无名帧会带上对象类型（`<无名StatusBar>`），排查时能分清层级
+- **任务日志按 Alt**：`GetQuestLogSelection` 在 8.0 就被移除了（玩家实测「无」），
+  改用 `C_QuestLog.GetSelectedQuest()`，直接返回任务 ID。
+  点一下任务行让它选中，再按 Alt 就能开窗
+- `/qct qlog` 现在会报告 `C_QuestLog` / `GetSelectedQuest` / `C_NamePlate` 是否存在，
+  以及当前选中的任务 ID
+- 按 Alt 没开窗时的自动播报也换成这三个现代 API 的状态
+
+## 1.5.22
+
+**血量：目标框是客户端自绘时，改成可拖动摆放；任务日志：改用「选中行」定位**
+
+- **血量数字贴在错误的框体上**：玩家的目标框是**客户端自己画的**，Lua 里既拿不到那个帧、
+  它也没有名字（`/qct health scan` 只列得出一个 TargetFrame），所以文字只能落在暴雪那个框体上。
+  新增**自由摆放模式**：插件自己画一个「当前 / 最大」文字框，按住就能拖到血条上，位置自动保存
+  - 命令：`/qct health float` 开启，`/qct health auto` 回到跟随框体，`/qct health move` 重新解锁拖动
+  - 设置界面新增「血量数值可拖动（自由摆放）」开关
+- **`/qct health scan` 现在也列无名帧**（走客户端全量遍历），每项带序号；
+  新增 `/qct health pick <序号>` 直接按序号指定框体 —— 框体没名字也能指过去
+- **「血量文字已挂到 …」这行一直不出现**：`UpdateUnit` 是普通函数、没有 `self`，
+  写成 `self.announced` 会抛错并被外层 `pcall` 吞掉。现在能正常播报了
+- **任务日志按 Alt 还是没反应**：不再依赖钩子、不再依赖 `GetMouseFocus`（本客户端没有），
+  改成读**任务日志当前选中的那一条**（`GetQuestLogSelection`）+ 用 `GetQuestLink` 抠任务 ID。
+  点一下任务行让它选中，再按 Alt 就会开窗
+  - 任务日志帧不再按名字猜：扫 `_G` 里所有名字带 `QuestLog` 的帧当候选根
+  - 提示框正显示着别的对象（物品 / NPC）时不会抢 Alt
+  - 按 Alt 没开窗时会自动播报现场（日志帧列表 / 选中索引 / 条目数 / 相关 API 有没有）
+- **性能**：血量找不到框体时，之前每次 `UNIT_HEALTH` 都会重扫全屏，战斗中会掉帧；现在限流 3 秒
+
 ## 1.5.21
 
 **修探针 bug（诊断又崩了）；新增 /qct health scan**
