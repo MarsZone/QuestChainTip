@@ -1191,12 +1191,131 @@ local function HoveredFrames(maxCount)
 end
 T.HoveredFrames = HoveredFrames
 
+---帧在屏幕上的矩形（UIParent 坐标系）。拿不到就返回 nil。
+local function FrameRect(frame)
+    if not frame or type(frame.GetRect) ~= "function" then return nil end
+    local ok, left, bottom, width, height = pcall(frame.GetRect, frame)
+    if not ok or type(left) ~= "number" or type(bottom) ~= "number"
+        or type(width) ~= "number" or type(height) ~= "number" then
+        return nil
+    end
+    if width <= 0 or height <= 0 then return nil end
+    return left, bottom, width, height
+end
+
+---光标现在在 UIParent 坐标系里的位置
+local function CursorPos()
+    if type(GetCursorPosition) ~= "function" then return nil end
+    local ok, x, y = pcall(GetCursorPosition)
+    if not ok or type(x) ~= "number" or type(y) ~= "number" then return nil end
+    local scale = 1
+    if UIParent and type(UIParent.GetEffectiveScale) == "function" then
+        local sok, value = pcall(UIParent.GetEffectiveScale, UIParent)
+        if sok and type(value) == "number" and value > 0 then scale = value end
+    end
+    return x / scale, y / scale
+end
+
+---光标落在哪些帧里（纯几何判断，**不依赖 IsMouseOver**）。
+---
+---为什么还要这一套：玩家机器上 `IsMouseOver()` 对任务日志那些行根本返回 false
+---（客户端自绘的列表，行不是标准的可交互按钮），于是「鼠标下没识别到行」，
+---只能退回日志里选中的那条 —— 表现出来就是「按 Alt 弹的永远是同一个任务」。
+---矩形命中不看帧的类型和鼠标开关，只要是帧、只要看得见、只要光标在它的框里就算。
+---@param maxCount number? 最多返回几个
+---@return table[] frames 面积小的在前（行按钮优先于它的大容器）
+local function CursorFrames(maxCount)
+    local list = {}
+    if type(EnumerateFrames) ~= "function" then return list end
+    local cx, cy = CursorPos()
+    if not cx then return list end
+
+    local guard = 0
+    pcall(function()
+        local current = nil
+        while true do
+            local nextFrame = EnumerateFrames(current)
+            if not nextFrame then break end
+            current = nextFrame
+            guard = guard + 1
+            if guard > 30000 then break end
+
+            local left, bottom, width, height = FrameRect(nextFrame)
+            if left and width > 2 and height > 2
+                and cx >= left and cx <= left + width
+                and cy >= bottom and cy <= bottom + height
+                and IsReallyShown(nextFrame) then
+                list[#list + 1] = { frame = nextFrame, area = width * height }
+            end
+        end
+    end)
+
+    table.sort(list, function(a, b) return a.area < b.area end)
+
+    local frames = {}
+    for index, item in ipairs(list) do
+        if maxCount and index > maxCount then break end
+        frames[#frames + 1] = item.frame
+    end
+    return frames
+end
+T.CursorFrames = CursorFrames
+
+---鼠标现在是不是压在任务日志里（含世界地图右边那个任务列表）。
+---
+---为什么需要它：任务日志里 **Shift+点击是 Questie 的「隐藏/显示任务」**，
+---我们一按 Shift 就把详情窗弹出来，窗口盖在日志上，那一次点击就点到窗口上 ——
+---玩家就再也藏不了任务，还会冒出「插件导致界面行为失效」。
+---这个客户端提示框没有 owner，靠 owner 判断不了，只能看光标压着的帧在不在日志里。
+local function MouseOverQuestLog()
+    local candidates = HoveredFrames(8)
+    for _, frame in ipairs(CursorFrames(12)) do
+        candidates[#candidates + 1] = frame
+    end
+
+    -- 整屏的背景容器（UIParent 之类）不算「在任务日志里」：
+    -- 有的客户端把日志外面套一层全屏透明帧，按面积排掉它，免得 Shift 在哪儿都失效
+    local screenArea = 0
+    if UIParent then
+        local ok, width, height = pcall(function() return UIParent:GetWidth(), UIParent:GetHeight() end)
+        if ok and type(width) == "number" and type(height) == "number" then
+            screenArea = width * height
+        end
+    end
+
+    for _, frame in ipairs(candidates) do
+        local left, bottom, width, height = FrameRect(frame)
+        local tooBig = screenArea > 0 and left ~= nil and (width * height) > screenArea * 0.7
+        if not tooBig then
+            local node, depth = frame, 0
+            while node and depth < 10 do
+                local name = SafeName(node)
+                if (name and name:find("QuestLog", 1, true)) or node == _G.QuestLogFrame
+                    or node == _G.QuestLog then
+                    return true
+                end
+                local ok, parent = pcall(function() return node:GetParent() end)
+                node = ok and parent or nil
+                depth = depth + 1
+            end
+        end
+    end
+    return false
+end
+T.MouseOverQuestLog = MouseOverQuestLog
+
 ---从一个「鼠标压着的帧」推任务 ID。
 ---先看帧上有没有现成的任务 ID 字段（Questie 追踪条、服务器自定义任务列表都这么存），
 ---再沿祖先链找「算任务日志行」的帧，用它的 GetID() 当日志索引去换任务 ID。
 ---@return number? questId, string? source
 local function QuestIdFromHoveredFrame(frame)
     if not frame then return nil, nil end
+
+    -- 我们自己画的悬停面板 / 详情窗也会被「矩形命中」扫到，跳过，
+    -- 免得把它们身上的字段（questId 之类）当成鼠标下这一行
+    if (QCT.Window and frame == QCT.Window.frame) or (T.panel and frame == T.panel) then
+        return nil, nil
+    end
 
     for _, key in ipairs({ "questId", "questID", "QuestId", "questid" }) do
         local value = SafeNumber(frame, key)
@@ -1247,7 +1366,10 @@ end
 function T:QuestIdUnderMouse()
     local logShown = QuestLogShown()
 
-    -- 0) 鼠标正压着的帧 —— 全量遍历 + IsMouseOver，不需要 GetMouseFocus。
+    -- 0) 鼠标正压着的帧 —— 不需要 GetMouseFocus。
+    --    两套判断并用：
+    --      a) 帧自己的 IsMouseOver()（标准客户端最准）
+    --      b) 光标矩形命中（这个客户端的行按钮 IsMouseOver 一律 false，只能靠几何）
     --    放在最前面：玩家停在 A 行上按 Alt，心里想的就是 A，
     --    哪怕他之前点选过 B，也不该给他弹 B。
     local hovered = HoveredFrames(8)
@@ -1255,21 +1377,22 @@ function T:QuestIdUnderMouse()
         local questId, why = QuestIdFromHoveredFrame(frame)
         if questId then return questId, why end
     end
+    for _, frame in ipairs(CursorFrames(12)) do
+        local questId, why = QuestIdFromHoveredFrame(frame)
+        if questId then return questId, why end
+    end
 
-    -- 0) 任务日志里「选中」的那一条。
-    --    点一下任务行就会选中；这条路不需要钩子、不需要 GetMouseFocus、
-    --    也不需要知道行按钮叫什么名字 —— 对当前这个客户端最靠谱。
+    -- 0b) 任务日志里「选中」的那一条 —— **只在鼠标确实压在任务日志里**时才认。
     --
-    --    这一步**故意不要求 QuestLogShown()**：这个客户端的任务日志很可能
-    --    根本没有名字带 QuestLog 的帧（`/qct qlog` 里「全局处理器: 不存在」
-    --    就是信号）。一旦把「日志开着」当门槛，这条路也会跟着废掉 ——
-    --    1.5.18~1.5.21 四版全是这么废的。
-    --    只挡一种情况：提示框正显示着别的对象（物品/NPC），那时按 Alt 不该抢。
+    --    为什么必须加这个门槛：`C_QuestLog.GetSelectedQuest()` 记的是「上一次点过的任务」，
+    --    不会因为你把鼠标挪开就清空。1.5.25 没加门槛，结果玩家在野外、地图也没开，
+    --    随便按一下 Alt 就弹出上次选的那个任务（实测 #93443 反复弹）。
+    local logUnderMouse = MouseOverQuestLog()
     local tip = _G.GameTooltip
     local tipShown = tip ~= nil and type(tip.IsShown) == "function" and tip:IsShown()
     local owner = tipShown and CurrentOwner(tip) or nil
     local hoverOther = tipShown and owner ~= nil and not IsQuestLogRow(owner)
-    if not hoverOther then
+    if logUnderMouse and not hoverOther then
         local questId, index = SelectedQuestId()
         if questId then
             return questId, index and ("日志选中行 索引 " .. tostring(index))
@@ -1973,6 +2096,18 @@ end
 ---任务日志用「任务日志快捷键」（默认 Alt，避开原生 Shift+点击复制链接）。
 ---@param viaKey string? 按下的键族（SHIFT / CTRL / ALT），由事件直接带进来
 function T:OnModifierChanged(viaKey)
+    -- 任务日志里 **Shift+点击是 Questie 的「隐藏/显示任务」**。
+    -- 我们一按 Shift 就把详情窗弹出来，窗口盖在日志上，那一次点击就点到窗口上 ——
+    -- 玩家再也藏不了任务，还会冒出「插件导致界面行为失效」。
+    -- 这个客户端提示框没有 owner，判断不了鼠标在不在日志里，只能看光标压着的帧。
+    if viaKey and viaKey == ChainKey() and ChainKey() ~= QuestLogKey()
+        and MouseOverQuestLog() then
+        self.owner = nil
+        self.ownerTime = nil
+        QCT.Log:Add("questlog", "鼠标在任务日志里，Shift 放行给 Questie 的隐藏任务")
+        return
+    end
+
     -- 任务日志这条路：按下键的这一刻现场问鼠标停在哪一行上。
     -- 不依赖任何钩子，也不依赖 tooltip owner（有的 UI 包把任务日志的提示框换成自绘的，
     -- GameTooltip 里根本没有 owner）。上一版靠「钩子记下的按钮 + MouseIsOver」，
@@ -2034,8 +2169,12 @@ function T:OnModifierChanged(viaKey)
             self.questLogButton = nil
             self.questLogQuestId = nil
             self.lastQuestId = nil
-            local ok, err = pcall(self.ExplainQuestLogMiss, self)
-            if not ok then QCT.Log:Add("questlog", "播报失败:", tostring(err)) end
+            -- 鼠标根本不在任务日志里（野外、聊天框、动作条……）时，按 Alt 是玩家自己的事：
+            -- 既不弹窗，也不往聊天框播报，免得刷屏
+            if MouseOverQuestLog() then
+                local ok, err = pcall(self.ExplainQuestLogMiss, self)
+                if not ok then QCT.Log:Add("questlog", "播报失败:", tostring(err)) end
+            end
             return
         end
     end
