@@ -260,9 +260,9 @@ end
 local function CreatePanel()
     local backdropTemplate = BackdropTemplateMixin and "BackdropTemplate" or nil
     local frame = CreateFrame("Frame", PANEL_NAME, UIParent, backdropTemplate)
-    -- 比最初高 250px：多了两个快捷键、两行宽度、血量、自由摆放和小地图图标，
-    -- 底部按钮和提示语不能被挤到一起
-    frame:SetSize(WIDTH, 700)
+    -- 比最初高 190px：多了两个快捷键、两行宽度和小地图图标，
+    -- 底部按钮和提示语不能被挤到一起（1.5.26 去掉血量那两行，矮了 60px）
+    frame:SetSize(WIDTH, 640)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -323,14 +323,8 @@ local function CreatePanel()
     NewCheck(frame, L["启用插件"], "enabled", 22, y)
     y = y - ROW
 
-    -- 血量数值：和任务链无关的附加小功能，默认关，玩家自己开
-    NewCheck(frame, L["显示血量数值（目标/焦点血条上）"], "showHealth", 22, y)
-    y = y - ROW
-
-    -- 自由摆放：目标框是客户端自己画的（Lua 里拿不到那个帧）时，
-    -- 只能自己画一个文字框让玩家拖到血条上
-    NewCheck(frame, L["血量数值可拖动（自由摆放）"], "healthFloat", 40, y)
-    y = y - ROW
+    -- 1.5.26 起「血量数值显示」整个功能停用（会一直扫框体找血条，太费），
+    -- 所以设置里这两行也一起撤掉了。
 
     NewCheck(frame, L["显示小地图图标"], "minimap", 22, y)
     y = y - ROW

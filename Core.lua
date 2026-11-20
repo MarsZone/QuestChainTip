@@ -320,13 +320,6 @@ local function PrintHelp()
     QCT:Print(L["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"])
     QCT:Print(L["  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"])
     QCT:Print(L["  |cffffff00/qct logkey <alt|ctrl|none>|r - 任务日志里开详情窗的键（默认 alt）"])
-    QCT:Print(L["  |cffffff00/qct health|r - 血量显示诊断（框体/血条/文字状态）"])
-    QCT:Print(L["  |cffffff00/qct health <帧名>|r - 手动指定目标血量挂在哪个框体上（reset 恢复自动）"])
-    QCT:Print(L["  |cffffff00/qct health scan|r - 列出所有可见框体的名字与坐标，用来找出该挂哪个"])
-    QCT:Print(L["  |cffffff00/qct health pick <序号>|r - 按 scan 列出的序号指定框体（框体没名字时用这个）"])
-    QCT:Print(L["  |cffffff00/qct health float|r - 血量数值改为可拖动摆放（目标框是客户端自绘时用这个）"])
-    QCT:Print(L["  |cffffff00/qct health auto|r - 血量数值恢复跟随框体"])
-    QCT:Print(L["  |cffffff00/qct health move|r - 重新允许拖动血量数字"])
     QCT:Print(L["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"])
     QCT:Print(L["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"])
     QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
@@ -498,47 +491,10 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
             QCT.Tooltip:Diagnose()
         end
     elseif cmd == "health" then
-        if QCT.Health and QCT.Health.Diagnose then
-            local want = (rest or ""):gsub("^%s+", ""):gsub("%s+$", "")
-            if want == "reset" then
-                QCT.Health:ClearForced()
-                if QCT.db then QCT.db.healthFloat = false end
-                QCT.Health:Refresh()
-                QCT:Print("血量显示已恢复自动选择框体")
-            elseif want == "float" then
-                -- 目标框是客户端自己画的（Lua 拿不到那个帧）时的唯一办法：
-                -- 自己画一个文字框，玩家拖到血条上
-                QCT.Health:SetFloat(true)
-            elseif want == "auto" then
-                QCT.Health:SetFloat(false)
-                QCT:Print("血量显示已改为跟随框体")
-            elseif want == "move" then
-                QCT.Health:ToggleMove()
-            elseif want == "scan" then
-                QCT.Health:Scan()
-            elseif want:match("^pick%s+%d+$") then
-                -- 目标框没有名字时，用 scan 的序号直接指定
-                local number = tonumber(want:match("(%d+)"))
-                local ok, result = QCT.Health:UseFrameByIndex("target", number)
-                if ok then
-                    QCT:Print("目标血量已改为挂在:", result)
-                else
-                    QCT:Print(result or "指定失败")
-                end
-            elseif want ~= "" then
-                -- /qct health <帧名>：手动指定目标框体
-                local ok, err = QCT.Health:UseFrame("target", want)
-                if ok then
-                    QCT:Print("目标血量已改为挂在:", want)
-                else
-                    QCT:Print(err or "指定失败")
-                end
-            else
-                QCT.Health:Diagnose()
-            end
-        else
-            QCT:Print("血量模块未加载")
-        end
+        -- 1.5.26 起「血量数值显示」整个功能停用：它要不停扫框体、找血条、跟位置，
+        -- 玩家反馈太费。代码没删，还在 Health.lua 里 —— 想要就把它加回 toc 的加载列表。
+        QCT:Print("血量数值显示已停用（这个功能会一直扫框体找血条，太费）。")
+        QCT:Print("想恢复：把 Health.lua 加回 QuestChainTip.toc 的加载列表，这一行代码也还在。")
     elseif cmd == "qlog" then
         if QCT.Tooltip and QCT.Tooltip.DiagnoseQuestLog then
             QCT.Tooltip:DiagnoseQuestLog()

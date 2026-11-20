@@ -6,7 +6,7 @@
 ## Notes-zhCN: 任意任务（含已接取）都能看整条任务链。在世界地图上按住快捷键（默认 Shift，可改）弹出窗口，展示整条任务链的完成条件/奖励/详情/接取与交付地点/是否副本。
 ## Notes-zhTW: 任意任務（含已接取）都能看整條任務鏈。在世界地圖上按住快捷鍵（預設 Shift，可改）彈出視窗，展示整條任務鏈的完成條件/獎勵/詳情/接取與交付地點/是否副本。
 ## Author: MarsZone
-## Version: 1.5.25
+## Version: 1.5.26
 ## Category: Quests
 ## SavedVariables: QuestChainTipDB
 ## OptionalDeps: Questie, QuestieDB
@@ -21,6 +21,6 @@ Format.lua
 Data.lua
 Tooltip.lua
 ChainWindow.lua
-Health.lua
+# Health.lua  血量数值显示：1.5.26 起停用（常驻扫框体太费），需要时删掉本行即可
 Minimap.lua
 Options.lua
