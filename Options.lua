@@ -284,6 +284,14 @@ local function CreatePanel()
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText(L["任务链提示 - 设置"])
 
+    -- 版本号常驻右上角。玩家反馈「不知道装的是不是最新版」，光看界面看不出来。
+    -- 值来自 toc 的 ## Version（QCT.VERSION），发版只改 toc 一处即可。
+    local version = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    version:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -42, -22)
+    version:SetText("v" .. tostring(QCT.VERSION or "?"))
+    version:SetTextColor(0.55, 0.55, 0.55)
+    frame.version = version
+
     local subtitle = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     subtitle:SetTextColor(0.7, 0.7, 0.7)

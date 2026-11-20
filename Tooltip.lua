@@ -1482,6 +1482,7 @@ end
 ---把当前运行状态打到聊天框，便于定位“为什么不显示”
 function T:Diagnose()
     QCT:Print("---- 诊断 ----")
+    QCT:Print(L.F("插件版本: %s", tostring(QCT.VERSION or "?")))
     QCT:Print("插件启用:", tostring(QCT.db.enabled))
     QCT:Print("Questie 数据源:", tostring(D.available), " QuestieDB:", tostring(D.mod.QuestieDB ~= nil),
         " LibQuestieDB:", tostring(D.mod.DB ~= nil))

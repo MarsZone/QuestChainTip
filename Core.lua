@@ -9,7 +9,24 @@ local QCT = ns
 local L = QCT.Locale
 
 QCT.ADDON = ADDON
-QCT.VERSION = "1.0.0"
+
+---版本号：直接读 toc 里的 ## Version。
+---原来这里写死 "1.0.0"，从来没跟着发版改过，玩家问「我装的是哪个版本」根本答不上来。
+---读 toc 就只维护一处，不会忘。
+local function AddonVersion()
+    local name = ADDON or "QuestChainTip"
+
+    if type(GetAddOnMetadata) == "function" then
+        local ok, value = pcall(GetAddOnMetadata, name, "Version")
+        if ok and type(value) == "string" and value ~= "" then return value end
+    end
+    if type(C_AddOns) == "table" and type(C_AddOns.GetAddOnMetadata) == "function" then
+        local ok, value = pcall(C_AddOns.GetAddOnMetadata, name, "Version")
+        if ok and type(value) == "string" and value ~= "" then return value end
+    end
+    return "?"
+end
+QCT.VERSION = AddonVersion()
 
 --------------------------------------------------------------------------------
 -- 配置
