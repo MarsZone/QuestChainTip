@@ -113,6 +113,10 @@ local zhTW = {
         "  |cffffff00/qct logkey <alt|ctrl|none>|r - 任務日誌裡開詳情視窗的鍵（預設 alt）",
     ["用法: /qct logkey <alt|ctrl|none>"] = "用法: /qct logkey <alt|ctrl|none>",
     ["任务日志快捷键: %s"] = "任務日誌快捷鍵: %s",
+    ["  |cffffff00/qct health|r - 血量显示诊断（框体/血条/文字状态）"] =
+        "  |cffffff00/qct health|r - 血量顯示診斷（框體/血條/文字狀態）",
+    ["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"] =
+        "  |cffffff00/qct qlog|r - 任務日誌快捷鍵診斷",
     ["自动"] = "自動",
     ["窄"] = "窄",
     ["标准"] = "標準",
@@ -301,6 +305,10 @@ local enUS = {
         "  |cffffff00/qct logkey <alt|ctrl|none>|r - key that opens the chain window from the quest log (default alt)",
     ["用法: /qct logkey <alt|ctrl|none>"] = "Usage: /qct logkey <alt|ctrl|none>",
     ["任务日志快捷键: %s"] = "Quest log key: %s",
+    ["  |cffffff00/qct health|r - 血量显示诊断（框体/血条/文字状态）"] =
+        "  |cffffff00/qct health|r - health display diagnostics (frame / bar / text)",
+    ["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"] =
+        "  |cffffff00/qct qlog|r - quest log hotkey diagnostics",
     ["自动"] = "Auto",
     ["窄"] = "Narrow",
     ["标准"] = "Standard",

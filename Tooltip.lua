@@ -1142,7 +1142,13 @@ function T:OnQuestLogButtonEnter(button)
     local questId = D.GetQuestIdByIndex and D:GetQuestIdByIndex(button:GetID() or 0)
     if not questId then return end
     self.owner = button
+    self.ownerTime = GetTime()
     self.lastQuestId = questId
+    -- 单独记一份：任务日志那条路不依赖 tooltip owner（有的 UI 包把任务日志的提示框
+    -- 换成自绘的，GameTooltip 里根本没有 owner，按 Alt 就永远找不到目标）
+    self.questLogButton = button
+    self.questLogQuestId = questId
+    self.questLogTime = GetTime()
     local state = self.state
     if not state or state.tip ~= GameTooltip then return end
     state.questId = questId
@@ -1386,6 +1392,39 @@ end
 ---任务日志用「任务日志快捷键」（默认 Alt，避开原生 Shift+点击复制链接）。
 ---@param viaKey string? 按下的键族（SHIFT / CTRL / ALT），由事件直接带进来
 function T:OnModifierChanged(viaKey)
+    -- 任务日志这条路：只要鼠标还停在那行任务上，就直接开窗。
+    -- 为什么不走 TryOpenFromHover：有的 UI 包把任务日志的提示框换成自绘的，
+    -- GameTooltip 里没有 owner，按 Alt 永远找不到目标（玩家反馈「Alt 不弹」）。
+    -- 这里用 OnQuestLogButtonEnter 记下的按钮 + MouseIsOver 判断，完全不依赖 tooltip。
+    if viaKey and viaKey == QuestLogKey() and self.questLogButton and self.questLogQuestId then
+        -- 先看鼠标现在到底停在哪：如果停在地图图标上，就走下面的地图逻辑，
+        -- 别拿几十秒前悬停过的任务行来开窗
+        local tip = _G.GameTooltip
+        local shown = tip ~= nil and tip.IsShown ~= nil and tip:IsShown()
+        local currentOwner = shown and CurrentOwner(tip) or nil
+        local onMapIcon = currentOwner ~= nil and IsMapQuestIcon(currentOwner)
+
+        local over
+        if onMapIcon then
+            over = false
+        elseif type(MouseIsOver) == "function" then
+            local ok, value = pcall(MouseIsOver, self.questLogButton)
+            over = ok and value and true or false
+        else
+            -- 没有 MouseIsOver 的客户端：用时间窗口兜底，避免鼠标早就移开了还开窗
+            over = (GetTime() - (self.questLogTime or 0)) < 30
+        end
+        if over then
+            local questId = self.questLogQuestId
+            if QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId then return end
+            self:Hide()
+            self:OpenChainWindow(questId)
+            QCT.Log:Add("questlog", "快捷键直接开窗 | 按钮:",
+                tostring(self.questLogButton:GetName()), "| 任务:", questId)
+            return
+        end
+    end
+
     self:TryOpenFromHover("modifier", viaKey)
 end
 
@@ -1554,6 +1593,32 @@ function T:SelfTest()
         QCT:Print("|cffff0000面板 Show() 之后仍是隐藏状态，说明 Frame 创建有问题。|r")
     end
     return panel
+end
+
+---`/qct qlog` 用：任务日志这条快捷键路的完整状态。
+---「Alt 按了没反应」时，光看代码猜不出来，得看实际是哪一环断了。
+function T:DiagnoseQuestLog()
+    QCT:Print("---- 任务日志快捷键诊断 ----")
+    QCT:Print("配置的键:", QuestLogKey())
+
+    local tip = _G.GameTooltip
+    local shown = tip ~= nil and tip.IsShown ~= nil and tip:IsShown()
+    QCT:Print("提示框显示:", tostring(shown))
+
+    local owner = shown and CurrentOwner(tip) or nil
+    QCT:Print("提示框持有者:", SafeName(owner) or "无",
+        "| 算任务日志行:", tostring(owner and IsQuestLogButton(owner) or false))
+
+    local button = self.questLogButton
+    QCT:Print("最近悬停的任务按钮:", button and (SafeName(button) or "?") or "无",
+        "| 任务:", tostring(self.questLogQuestId))
+    if button and type(MouseIsOver) == "function" then
+        local ok, value = pcall(MouseIsOver, button)
+        QCT:Print("鼠标还在这个按钮上:", tostring(ok and value))
+    end
+    QCT:Print("任务日志按钮数:", tostring(self.buttonCount or 0),
+        "| 全局处理器:", tostring(self.hookedGlobal and "已挂" or "不存在"))
+    QCT:Print("提示：鼠标停在任务行上再按 " .. QuestLogKeyLabel() .. "，应能打开详情窗。")
 end
 
 ---把当前运行状态打到聊天框，便于定位“为什么不显示”

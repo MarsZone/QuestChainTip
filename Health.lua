@@ -20,6 +20,15 @@ local UNITS = { "target", "focus" }
 ---unit -> { frame, bar, text, last }
 local entries = {}
 
+local function FrameName(frame)
+    if not frame then return "?" end
+    if type(frame.GetName) == "function" then
+        local ok, name = pcall(frame.GetName, frame)
+        if ok and type(name) == "string" and name ~= "" then return name end
+    end
+    return "<无名>"
+end
+
 local function GetFont()
     local source = _G["GameTooltipTextLeft1"]
     if source and source.GetFont then
@@ -77,16 +86,34 @@ local function CreateEntry(unit)
     local bar = known
         or FindStatusBar(frame, 0, "Health")
         or FindStatusBar(frame, 0, nil)
-    if not bar then return nil end
 
-    -- 文字必须建在血条自己身上，不能建在 TargetFrame 上：
-    -- 血条是 TargetFrame 的子帧，子帧的绘制层级永远高于父帧的任何 layer，
-    -- 挂在父帧 OVERLAY 上的文字会被血条整个盖住（玩家反馈「血量没显示」就是这个原因）。
-    local text = bar:CreateFontString(nil, "OVERLAY")
+    local text
+    if bar then
+        -- 文字必须建在血条自己身上，不能建在 TargetFrame 上：
+        -- 血条是 TargetFrame 的子帧，子帧的绘制层级永远高于父帧的任何 layer，
+        -- 挂在父帧 OVERLAY 上的文字会被血条整个盖住。
+        text = bar:CreateFontString(nil, "OVERLAY")
+        QCT.Log:Add("health", unit, "文字挂血条 |", FrameName(bar))
+    else
+        -- 兜底：有些自定义 UI 的血条不是 StatusBar（Frame + 贴图做的），递归找不到。
+        -- 这时在框体上叠一层独立 Frame，层级抬到所有子帧之上，文字放框体中央。
+        -- 位置不完美，但至少能看见，也好过完全不显示。
+        local overlay = CreateFrame("Frame", nil, frame)
+        if overlay.SetAllPoints then overlay:SetAllPoints(frame) end
+        if overlay.SetFrameLevel and frame.GetFrameLevel then
+            local ok, level = pcall(frame.GetFrameLevel, frame)
+            overlay:SetFrameLevel((ok and tonumber(level) or 1) + 50)
+        end
+        text = overlay:CreateFontString(nil, "OVERLAY")
+        QCT.Log:Add("health", unit, "没找到血条，用框体中央兜底 |", FrameName(frame))
+    end
+
     local path, size, flags = GetFont()
     if text.SetFont then text:SetFont(path, math.max(10, (size or 12) - 1), flags) end
-    text:SetPoint("CENTER", bar, "CENTER", 0, 0)
+    text:SetPoint("CENTER", bar or text:GetParent(), "CENTER", 0, 0)
     if text.SetJustifyH then text:SetJustifyH("CENTER") end
+    -- 不设宽度的话，某些客户端上 FontString 会按 0 宽排版，字挤成一条看不见
+    if text.SetWidth then text:SetWidth(220) end
     text:SetTextColor(1, 1, 1)
     -- 和 tooltip 一样加 1px 阴影：血条底色是深红，纯白字在缩放后容易糊
     if text.SetShadowColor then text:SetShadowColor(0, 0, 0, 1) end
@@ -178,4 +205,53 @@ function H:Init()
     end)
     self.eventFrame = frame
     self:Refresh()
+end
+
+---`/qct health` 用：把「框体找没找到 / 血条找没找到 / 文字状态」全打出来。
+---玩家反馈「血量不显示」时，光看代码猜不出来，得看实际结构。
+function H:Diagnose()
+    QCT:Print("---- 血量诊断 ----")
+    QCT:Print("开关:", tostring(QCT.db and QCT.db.showHealth))
+
+    for _, unit in ipairs(UNITS) do
+        local frame = UnitFrame(unit)
+        local exists = type(UnitExists) == "function" and UnitExists(unit) or false
+        local cur = type(UnitHealth) == "function" and UnitHealth(unit) or 0
+        local max = type(UnitHealthMax) == "function" and UnitHealthMax(unit) or 0
+
+        QCT:Print(unit .. " 框体:", FrameName(frame),
+            "| 单位存在:", tostring(exists),
+            "| 血量:", tostring(cur), "/", tostring(max))
+
+        local entry = entries[unit]
+        if entry then
+            local visible = "?"
+            if entry.text.IsVisible then
+                local ok, value = pcall(entry.text.IsVisible, entry.text)
+                visible = ok and tostring(value) or "?"
+            end
+            QCT:Print("  文字:", tostring(entry.text:GetText()),
+                "| 可见:", visible,
+                "| 父级:", FrameName(entry.text.GetParent and entry.text:GetParent(entry.text)))
+        else
+            QCT:Print("  文字: 还没创建")
+        end
+
+        if frame and type(frame.GetChildren) == "function" then
+            local ok, children = pcall(frame.GetChildren, frame)
+            if ok and type(children) == "table" then
+                local names = {}
+                for i, child in ipairs(children) do
+                    if i > 12 then break end
+                    local kind = "?"
+                    if child.GetObjectType then
+                        local ok2, value = pcall(child.GetObjectType, child)
+                        if ok2 then kind = tostring(value) end
+                    end
+                    names[#names + 1] = FrameName(child) .. "(" .. kind .. ")"
+                end
+                QCT:Print("  子帧:", table.concat(names, ", "))
+            end
+        end
+    end
 end

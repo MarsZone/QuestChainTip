@@ -295,6 +295,8 @@ local function PrintHelp()
     QCT:Print(L["  |cffffff00/qct locale <zhCN|zhTW|enUS|auto>|r - 切换界面语言"])
     QCT:Print(L["  |cffffff00/qct key <shift|ctrl|alt|none|任意键>|r - 详情窗快捷键（默认 shift，可避开 Questie 的 Shift）"])
     QCT:Print(L["  |cffffff00/qct logkey <alt|ctrl|none>|r - 任务日志里开详情窗的键（默认 alt）"])
+    QCT:Print(L["  |cffffff00/qct health|r - 血量显示诊断（框体/血条/文字状态）"])
+    QCT:Print(L["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"])
     QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
     QCT:Print(L["  |cffffff00/qct pwidth <240-560>|r - 悬停面板宽度"])
 end
@@ -462,6 +464,18 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
     elseif cmd == "why" or cmd == "diag" then
         if QCT.Tooltip then
             QCT.Tooltip:Diagnose()
+        end
+    elseif cmd == "health" then
+        if QCT.Health and QCT.Health.Diagnose then
+            QCT.Health:Diagnose()
+        else
+            QCT:Print("血量模块未加载")
+        end
+    elseif cmd == "qlog" then
+        if QCT.Tooltip and QCT.Tooltip.DiagnoseQuestLog then
+            QCT.Tooltip:DiagnoseQuestLog()
+        else
+            QCT:Print("提示模块未加载")
         end
     elseif cmd == "dump" then
         local id = tonumber(rest)
