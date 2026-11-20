@@ -197,46 +197,6 @@ function T:ApplyChainKey()
     return ok and true or false
 end
 
---------------------------------------------------------------------------------
--- 任务日志里开详情窗：Shift + 右键
---
--- 为什么不是 Shift+左键：任务日志里 **Shift+左键是 Questie 的「隐藏/显示任务」**，
--- 我们一按 Shift 就弹窗，窗口盖在日志上，那次点击就落到窗口上 —— 任务藏不了，
--- 还会冒出「插件导致界面行为失效」。左键必须完整让给 Questie。
--- Shift+右键原本没有任何用途（右键单独按是交互/自动攻击），绑走不影响任何东西。
---------------------------------------------------------------------------------
-
-local LOG_CLICK_BUTTON = "QuestChainTipLogClickButton"
-
-local function LogClickButton()
-    local button = _G[LOG_CLICK_BUTTON]
-    if button then return button end
-    button = CreateFrame("Button", LOG_CLICK_BUTTON, UIParent)
-    button:SetSize(1, 1)
-    button:Hide()
-    if type(button.RegisterForClicks) == "function" then
-        pcall(button.RegisterForClicks, button, "RightButtonUp")
-    end
-    button:SetScript("OnClick", function()
-        if T.OnLogRightClick then pcall(T.OnLogRightClick, T) end
-    end)
-    return button
-end
-
----把 SHIFT-BUTTON2 绑到隐藏按钮上。换角色 / 重登都可能被冲掉，登录时要重新应用。
----@return boolean
-function T:ApplyLogClick()
-    LogClickButton()
-    local ok = false
-    if type(SetBindingClick) == "function" then
-        ok = pcall(SetBindingClick, "SHIFT-BUTTON2", LOG_CLICK_BUTTON, "RightButton")
-    elseif type(SetBinding) == "function" then
-        ok = pcall(SetBinding, "SHIFT-BUTTON2", "CLICK " .. LOG_CLICK_BUTTON .. ":RightButton")
-    end
-    if ok and type(SaveBindings) == "function" then pcall(SaveBindings, 2) end
-    return ok and true or false
-end
-
 local NEXT_ICON = "|TInterface\\AddOns\\Questie\\Icons\\nextquest.blp:14:14:0:0|t"
 local REP_ICON = "|TInterface\\AddOns\\Questie\\Icons\\reputation.blp:14:14:0:0|t"
 
@@ -1528,32 +1488,7 @@ function T:QuestIdUnderMouse()
     return nil
 end
 
----Shift+右键：任务日志里开详情窗。
----左键完整让给 Questie 的「隐藏/显示任务」，所以开窗改到右键上。
-function T:OnLogRightClick()
-    local questId, source = self:QuestIdUnderMouse()
-    if not questId then
-        if MouseOverQuestLog() then
-            QCT:Print("没认出这一行任务：把鼠标停在任务名上再 Shift+右键。")
-            QCT.Log:Add("questlog", "Shift+右键：光标在日志里但没定位到任务")
-        end
-        return
-    end
-
-    -- 只认任务日志里的行：野外右键不能开窗。
-    -- 两个条件满足一个就行 —— 名字/矩形认出来了，或者现场扫到的就是日志行
-    local isLogRow = (source ~= nil and source:find("日志", 1, true) ~= nil)
-        or MouseOverQuestLog()
-    if not isLogRow then return end
-
-    if not (QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId) then
-        self:Hide()
-        self:OpenChainWindow(questId)
-    end
-    QCT.Log:Add("questlog", "Shift+右键开窗 |", tostring(source), "| 任务:", questId)
-end
-
----任务日志里按 Shift 时的提示：左键是 Questie 的隐藏任务，开窗改用 Shift+右键。
+---任务日志里按 Shift 时的提示：左键是 Questie 的隐藏任务，开窗用 Alt。
 ---限流 60 秒一次、每次登录最多 3 次，正常游戏不会刷屏。
 function T:HintLogRightClick()
     local now = type(GetTime) == "function" and GetTime() or 0
@@ -1562,8 +1497,7 @@ function T:HintLogRightClick()
     self.logHintAt = now
     self.logHintCount = (self.logHintCount or 0) + 1
     QCT:Print("任务日志里 Shift+左键是「隐藏/显示任务」，留给 Questie。")
-    QCT:Print("  要看任务链：|cffffff00Shift+右键|r 点任务行（或按 "
-        .. QuestLogKeyLabel() .. "）。")
+    QCT:Print("  要看任务链：按住 |cffffff00Shift|r 悬停，|cffffff00松开 Shift 就弹窗|r。")
 end
 
 ---按了任务日志快捷键却什么也没弹时，直接把「插件到底看到了什么」播报到聊天框。
@@ -1828,18 +1762,9 @@ function T:Refresh(force)
     end
     self.lastQuestId = state.questId
 
-    -- 地图上按住 Shift：直接开详情窗，不弹面板（地图已经关掉时不许开，见 OnModifierChanged）
-    if IsChainKeyDown() and IsMapQuestIcon(owner) and IsWorldMapOpen() and QCT.Window then
-        QCT.Log:Add("shift", "开详情窗 | 任务:", state.questId, "| 链:", self:DescribeFrameChain(owner))
-        self:Hide()
-        local window = QCT.Window
-        if not window:IsShown() or window.questId ~= state.questId then
-            local ok, err = pcall(window.Open, window, state.questId)
-            if not ok then QCT:Trace("window", "打开详情窗失败:", tostring(err)) end
-        end
-        if ExplainOpened then ExplainOpened(owner, state.questId) end
-        return
-    end
+    -- 1.5.30 起详情窗**不在按下 Shift 时弹**，改成**松开 Shift 才弹**
+    -- （见 OnModifierChanged）。按下那一刻什么都不做，Questie 的 Shift+点击
+    -- （隐藏/显示任务）才有机会落到任务行上；松开时点击早就结束了，再弹不碍事。
 
     -- 聊天框里不弹：玩家在那儿是要复制/点击链接
     if owner and IsChatFrame(owner) then
@@ -1915,7 +1840,7 @@ function T:InstallQuestLogHooks()
     -- 这一轮扫到的行按钮（用集合去重：名字循环和结构扫描会扫到同一个按钮）
     local found = {}
 
-    ---给一个行按钮挂 OnEnter（已经挂过就不重复挂）
+    ---给一个行按钮挂 OnEnter / OnMouseUp（已经挂过就不重复挂）
     local function HookRow(button)
         if not button or not button.HookScript then return end
         found[button] = true
@@ -2179,37 +2104,56 @@ end
 ---两条路各用各的键：世界地图用「详情窗快捷键」（默认 Shift），
 ---任务日志用「任务日志快捷键」（默认 Alt，避开原生 Shift+点击复制链接）。
 ---@param viaKey string? 按下的键族（SHIFT / CTRL / ALT），由事件直接带进来
-function T:OnModifierChanged(viaKey)
+---@param down boolean? true = 按下，false = 松开（Shift 那条路要「松开才弹」）
+function T:OnModifierChanged(viaKey, down)
     -- 任务日志里 **Shift+点击是 Questie 的「隐藏/显示任务」**。
-    -- 我们一按 Shift 就把详情窗弹出来，窗口盖在日志上，那一次点击就点到窗口上 ——
-    -- 玩家再也藏不了任务，还会冒出「插件导致界面行为失效」。
-    -- 这个客户端提示框没有 owner，判断不了鼠标在不在日志里，只能看光标压着的帧。
+    -- 所以 Shift 这条手势改成「**松开才弹**」：
+    --   * 按下 Shift：什么都不做 —— 这一次点击能完整落到任务行上，任务正常隐藏
+    --   * 松开 Shift：点击早就结束了，这时再把鼠标下这个任务的整条链弹出来
+    -- 这样既不挡隐藏任务，又不用记新组合键。
     if viaKey and viaKey == ChainKey() and ChainKey() ~= QuestLogKey() then
-        local inLog = MouseOverQuestLog()
-        if not inLog then
-            -- 兜底：帧名 / 矩形都没认出来时，直接看现场扫到的这一行是不是任务日志行
-            local okScan, id, source = pcall(self.QuestIdUnderMouse, self)
-            if okScan and id and source and source:find("日志", 1, true) then inLog = true end
-        end
-
-        -- 第二条：提示框显示着、却**没有持有者** —— 这是自绘界面的特征，
-        -- 这个客户端的任务日志就是这样（玩家实测：提示框 显示 / 持有者 无）。
-        -- 地图上的 Questie 图标一定会 SetOwner，所以这条不会误伤地图。
-        local tipNow = _G.GameTooltip
-        local tipNowShown = tipNow ~= nil and type(tipNow.IsShown) == "function"
-            and tipNow:IsShown()
-        local liveOwner = tipNowShown and CurrentOwner(tipNow) or nil
-        local ownerless = tipNowShown and liveOwner == nil
-
-        if inLog or ownerless then
-            self.owner = nil
-            self.ownerTime = nil
-            -- 提醒玩家：日志里开窗改成了 Shift+右键（左键是 Questie 的隐藏任务）
-            local okHint, err = pcall(self.HintLogRightClick, self)
-            if not okHint then QCT.Log:Add("questlog", "提示失败:", tostring(err)) end
-            QCT.Log:Add("questlog", "Shift 放行", inLog and "（光标在任务日志里）" or "（提示框没有持有者）")
+        if down then
+            QCT.Log:Add("key", "Shift 按下：不弹窗（留给 Questie 的 Shift+点击）")
             return
         end
+
+        -- 松开：现场看鼠标下是什么，再决定弹不弹
+        local questId, source = self:QuestIdUnderMouse()
+        local isLogRow = source ~= nil and source:find("日志", 1, true) ~= nil
+
+        -- 不是日志行的一律按「地图图标」处理：要求地图真的开着，
+        -- 否则按 M 关图之后再松开 Shift 又会凭空弹（1.5.10 修过的老问题）
+        if questId and not isLogRow and not IsWorldMapOpen() then questId = nil end
+
+        if not questId then
+            local tip = _G.GameTooltip
+            local tipShown = tip ~= nil and type(tip.IsShown) == "function" and tip:IsShown()
+            local owner = tipShown and CurrentOwner(tip) or nil
+            if owner and IsMapQuestIcon(owner) and IsWorldMapOpen() then
+                questId = self:ResolveQuestIdFromOwner(owner)
+                source = "地图图标（松开 Shift）"
+                -- 暴雪的 POI 是无名按钮、身上没有任务 ID，只能靠提示框标题反查
+                if not questId and tip then
+                    local okDetect, id = pcall(self.DetectQuestId, self, tip)
+                    if okDetect and id then
+                        questId = id
+                        source = "地图图标（标题识别）"
+                    end
+                end
+            end
+        end
+
+        if questId then
+            if not (QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId) then
+                self:Hide()
+                self:OpenChainWindow(questId)
+            end
+            QCT.Log:Add("key", "松开 Shift 开窗 |", tostring(source), "| 任务:", questId)
+        elseif MouseOverQuestLog() then
+            local okHint, err = pcall(self.HintLogRightClick, self)
+            if not okHint then QCT.Log:Add("questlog", "提示失败:", tostring(err)) end
+        end
+        return
     end
 
     -- 任务日志这条路：按下键的这一刻现场问鼠标停在哪一行上。
@@ -2316,11 +2260,14 @@ function T:Enable()
     TryInstall("MODIFIER_STATE_CHANGED", function()
         local frame = CreateFrame("Frame")
         frame:RegisterEvent("MODIFIER_STATE_CHANGED")
-        frame:SetScript("OnEvent", function(_, _, key)
+        frame:SetScript("OnEvent", function(_, _, key, state)
             -- 只认玩家配的那两族：地图用 chainKey，任务日志用 questLogKey
             local family = KeyFamily(key)
             if family ~= ChainKey() and family ~= QuestLogKey() then return end
-            local ok, err = pcall(T.OnModifierChanged, T, family)
+            -- state 是「按下还是松开」：1 / true = 按下，0 / false = 松开。
+            -- Shift 那条路要区分（按下不弹、松开才弹），所以必须传进去。
+            local down = (state == 1 or state == true)
+            local ok, err = pcall(T.OnModifierChanged, T, family, down)
             if not ok then QCT:Debug("快捷键处理失败:", tostring(err)) end
         end)
         self.eventFrame = frame
@@ -2332,10 +2279,6 @@ function T:Enable()
         self:ApplyChainKey()
     end)
 
-    -- 任务日志里 Shift+右键开窗（左键让给 Questie 的隐藏任务）
-    TryInstall("Shift+右键绑定", function()
-        self:ApplyLogClick()
-    end)
 
     TryInstall("任务日志钩子", function()
         self:InstallQuestLogHooks()
