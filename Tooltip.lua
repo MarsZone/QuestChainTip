@@ -2069,6 +2069,12 @@ function T:TryOpenFromHover(source, viaKey)
     if owner then
         self.owner = owner
         self.ownerTime = GetTime()
+    elseif viaKey == ChainKey() then
+        -- 地图键（Shift）**只认活的提示框持有者**，不吃 5 秒缓存。
+        -- 这个客户端的任务日志是自绘的，提示框有内容却没有 owner（持有者 无）；
+        -- 以前拿旧 owner 兜底，结果在日志里按 Shift 就把上次悬停的地图图标
+        -- 当成「鼠标下这个」弹窗，把 Shift+左键（Questie 的隐藏任务）挡掉了。
+        owner = nil
     elseif self.owner and self.ownerTime and (GetTime() - self.ownerTime) < 5 then
         -- tooltip 刚被隐藏（鼠标抖动/重设 owner），用最近一次的目标继续
         owner = self.owner
@@ -2185,13 +2191,23 @@ function T:OnModifierChanged(viaKey)
             local okScan, id, source = pcall(self.QuestIdUnderMouse, self)
             if okScan and id and source and source:find("日志", 1, true) then inLog = true end
         end
-        if inLog then
+
+        -- 第二条：提示框显示着、却**没有持有者** —— 这是自绘界面的特征，
+        -- 这个客户端的任务日志就是这样（玩家实测：提示框 显示 / 持有者 无）。
+        -- 地图上的 Questie 图标一定会 SetOwner，所以这条不会误伤地图。
+        local tipNow = _G.GameTooltip
+        local tipNowShown = tipNow ~= nil and type(tipNow.IsShown) == "function"
+            and tipNow:IsShown()
+        local liveOwner = tipNowShown and CurrentOwner(tipNow) or nil
+        local ownerless = tipNowShown and liveOwner == nil
+
+        if inLog or ownerless then
             self.owner = nil
             self.ownerTime = nil
             -- 提醒玩家：日志里开窗改成了 Shift+右键（左键是 Questie 的隐藏任务）
             local okHint, err = pcall(self.HintLogRightClick, self)
             if not okHint then QCT.Log:Add("questlog", "提示失败:", tostring(err)) end
-            QCT.Log:Add("questlog", "鼠标在任务日志里，Shift 放行给 Questie 的隐藏任务")
+            QCT.Log:Add("questlog", "Shift 放行", inLog and "（光标在任务日志里）" or "（提示框没有持有者）")
             return
         end
     end
