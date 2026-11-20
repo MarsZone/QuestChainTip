@@ -1225,6 +1225,16 @@ local function QuestIdFromHoveredFrame(frame)
         depth = depth + 1
     end
 
+    -- 3) 有的客户端把**任务 ID 本身**塞进按钮的 GetID()，而不是日志索引。
+    --    任务日志索引不会超过两百条，所以超过 200 的数字基本就是任务 ID。
+    local rawId = SafeMethodNumber(frame, "GetID")
+    if rawId and rawId > 200 then
+        local name = SafeName(frame) or ""
+        if name:find("QuestLog", 1, true) or QuestLogShown() then
+            return rawId, "鼠标下按钮 ID 即任务 ID"
+        end
+    end
+
     return nil, nil
 end
 
@@ -1261,7 +1271,10 @@ function T:QuestIdUnderMouse()
     local hoverOther = tipShown and owner ~= nil and not IsQuestLogRow(owner)
     if not hoverOther then
         local questId, index = SelectedQuestId()
-        if questId then return questId, "日志选中行 " .. tostring(index) end
+        if questId then
+            return questId, index and ("日志选中行 索引 " .. tostring(index))
+                or "日志选中行（GetSelectedQuest）"
+        end
     end
 
     -- 1) 鼠标焦点帧
@@ -1861,6 +1874,8 @@ function T:TryOpenFromHover(source, viaKey)
     end
 
     local questId = (self.state and self.state.questId) or self.lastQuestId
+    -- 这个 ID 是从缓存来的还是现场查的 —— 任务日志那条键（Alt）只认现场查的
+    local fromCache = questId ~= nil
 
     -- 就算 OnShow 钩子没装上（state 是 nil），Shift 这条路也要能用：
     -- 直接现查一次任务 ID，不依赖任何钩子。
@@ -1903,6 +1918,12 @@ function T:TryOpenFromHover(source, viaKey)
         if not keyOk then
             ExplainNoWindow(owner, questId)
             return
+        end
+        -- 缓存里的是「上一次 Shift 看的任务」，跟鼠标下这一行没有任何关系。
+        -- 拿它开窗 = 玩家按 Alt 弹出来的却是上次 Shift 选的那个（1.5.24 实测 bug）。
+        if fromCache then
+            local ok, live = pcall(self.QuestIdUnderMouse, self)
+            questId = (ok and live) or nil
         end
         if not questId then
             ExplainNoWindow(owner, nil)
@@ -1965,10 +1986,26 @@ function T:OnModifierChanged(viaKey)
         local onMapIcon = currentOwner ~= nil and IsMapQuestIcon(currentOwner)
 
         if not onMapIcon then
-            -- 1) 钩子记下来的任务日志行还悬停着吗？
-            --    这个客户端**没有 GetMouseFocus**（玩家实测：/qct mouse 报「这个客户端没有
-            --    GetMouseFocus」），也没有全局 MouseIsOver，所以只能问帧自己的 IsMouseOver。
-            --    这一条是现在唯一能用的路，必须放在最前面。
+            -- 1) 现场扫鼠标下压着什么（全量遍历 + 每个帧自己的 IsMouseOver），最准的一条。
+            --    这个客户端**没有 GetMouseFocus**（玩家实测），也没有全局 MouseIsOver，
+            --    所以只能这么问；钩子记下来的行按钮只当兜底。
+            local questId, source = self:QuestIdUnderMouse()
+            if questId then
+                -- 用的是「日志里选中的那条」而不是鼠标下这一行时，明说一句：
+                -- 不然玩家会以为 Alt 弹的是上次 Shift 看/点过的任务（1.5.24 实测反馈）。
+                if source and source:find("选中行", 1, true) then
+                    QCT:Print("用的是任务日志里选中的那条：#" .. tostring(questId)
+                        .. "（鼠标下没识别到行；点一下目标行再按 " .. QuestLogKeyLabel() .. "）")
+                end
+                if not (QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId) then
+                    self:Hide()
+                    self:OpenChainWindow(questId)
+                end
+                QCT.Log:Add("questlog", "快捷键开窗 |", tostring(source), "| 任务:", questId)
+                return
+            end
+
+            -- 2) 现场扫不到，再看钩子记下的行按钮是不是还悬停着
             local row = self.questLogButton
             if row and self.questLogQuestId then
                 local stillHover
@@ -1979,25 +2016,27 @@ function T:OnModifierChanged(viaKey)
                     stillHover = (GetTime() - (self.questLogTime or 0)) < 3
                 end
                 if stillHover then
-                    local questId = self.questLogQuestId
+                    questId = self.questLogQuestId
                     if not (QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId) then
                         self:Hide()
                         self:OpenChainWindow(questId)
-                        QCT.Log:Add("questlog", "行悬停开窗 | 任务:", questId)
                     end
+                    QCT.Log:Add("questlog", "行悬停开窗 | 任务:", questId)
                     return
                 end
             end
 
-            -- 2) 客户端支持 GetMouseFocus 就现场问一次（这个客户端不支持，留着给别的客户端）
-            local questId, source = self:QuestIdUnderMouse()
-            if questId then
-                if QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId then return end
-                self:Hide()
-                self:OpenChainWindow(questId)
-                QCT.Log:Add("questlog", "快捷键开窗 |", tostring(source), "| 任务:", questId)
-                return
-            end
+            -- 3) 一条都没定位到：**绝不拿缓存开窗**。
+            --    1.5.24 的实测 bug：玩家先在别处 Shift 看过任务 A，再来任务日志里按 Alt，
+            --    下面的 TryOpenFromHover 会把缓存里的 A 当成「鼠标下这一行」弹出来 ——
+            --    表现出来就是「Alt 弹的是上次 Shift 选的那个」。
+            --    所以这里清掉缓存直接播报现场，让下一次按键从干净状态开始。
+            self.questLogButton = nil
+            self.questLogQuestId = nil
+            self.lastQuestId = nil
+            local ok, err = pcall(self.ExplainQuestLogMiss, self)
+            if not ok then QCT.Log:Add("questlog", "播报失败:", tostring(err)) end
+            return
         end
     end
 
