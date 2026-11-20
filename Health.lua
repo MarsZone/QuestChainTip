@@ -4,13 +4,21 @@
 为什么单独一个文件：这功能和任务链完全无关，塞进 Tooltip.lua 只会让那个文件更难读。
 默认关闭（设置里「显示血量数值」），玩家开了才建文字对象，关掉时立刻清空隐藏。
 
-1.5.18 重写了框体查找。上一版直接拿 _G.TargetFrame，然后在里面递归找第一个 StatusBar；
-在装了 pfUI 这类自绘 UI 的客户端上全军覆没：
-  * 暴雪的 TargetFrame 还在，但整条父链被隐藏了 —— 文字挂上去，屏幕上什么也看不见；
-  * 自绘框体的血条可能不是 StatusBar（Frame + 贴图做的），递归找不到；
-  * 血条找到了但和法力条长得一样，挑错就把数字叠到蓝条上。
-现在改成：先收集候选框体（默认框体 / pfUI.uf / 扫 UIParent 找 unit 字段），
-只挑**当前真的可见**的那个，血条按名字优先、其次按面积挑，实在没有就在框体上盖一层独立 Frame。
+1.5.19 改了两件大事，都是被真实报错逼出来的：
+
+一、**不能把血量拼成字符串**
+   这个客户端把 UnitHealth / UnitHealthMax 的返回值标成 secret value。
+   `string.format("%d / %d", cur, max)` 一执行就抛 "attempt to use a secret value"，
+   所以 1.5.15~1.5.18 一直在「框体找不到 / 层级不对」上打转，方向完全错了 ——
+   真正的原因是我们自己那行 format 就炸了，文字根本没被设置过。
+   现在改成三段独立文字：「当前值」「/」「最大值」，各自把**原始值**直接交给
+   FontString:SetText（secret value 只允许这样「显示」，不允许读出来加工）。
+
+二、**框体不能只看 _G.TargetFrame**
+   装了 pfUI 这类自绘 UI 时，暴雪的 TargetFrame 还在，但整条父链被隐藏 ——
+   文字挂上去屏幕上什么也没有；自绘血条还可能是 Frame + 贴图做的，不是 StatusBar。
+   现在先收集候选框体（默认框体 / pfUI.uf / 扫 UIParent 找 unit 字段），
+   只挑当前真的可见的那个，血条按名字优先、其次按面积挑，实在没有就在框体上盖一层独立 Frame。
 ]]
 
 local ADDON, ns = ...
@@ -22,15 +30,21 @@ QCT.Health = H
 
 local UNITS = { "target", "focus" }
 
----unit -> { frame, bar, text, last }
+---unit -> { frame, bar, cur, sep, max, blocked }
 local entries = {}
 
----这个客户端上有些值是 secret value（外来帧的文本、受保护单位的数值），
----直接 tostring / 比较会抛错，整个函数跟着炸。所有输出都走这里兜一层。
+--------------------------------------------------------------------------------
+-- 安全取值
+--------------------------------------------------------------------------------
+
+---secret value 对 tostring() 不报错、只是原样返回，真正抛错的是之后的拼接。
+---所以这里必须拿「拼一次」当探针，不能只 pcall(tostring)。
 local function Safe(value)
     if value == nil then return "nil" end
     local ok, text = pcall(tostring, value)
-    if ok then return text end
+    if not ok then return "<secret>" end
+    local ok2, probe = pcall(function() return text .. "" end)
+    if ok2 and type(probe) == "string" then return probe end
     return "<secret>"
 end
 
@@ -41,12 +55,6 @@ local function FrameName(frame)
         if ok and type(name) == "string" and name ~= "" then return name end
     end
     return "<无名>"
-end
-
-local function IsShownSelf(frame)
-    if not frame or type(frame.IsShown) ~= "function" then return false end
-    local ok, shown = pcall(frame.IsShown, frame)
-    return ok and shown and true or false
 end
 
 ---这个帧（含所有祖先）现在是不是真的看得见。
@@ -202,51 +210,81 @@ end
 
 --------------------------------------------------------------------------------
 -- 建文字
+--
+-- 三段独立 FontString，而不是一个「2182 / 2182」：
+-- 这个客户端的血量是 secret value，参与任何字符串拼接/格式化都会抛错，
+-- 但 SetText 是允许的出口 —— 把原始值直接喂进去，客户端自己会渲染成数字。
+-- 中间的「/」是静态文字，不需要读血量。
 --------------------------------------------------------------------------------
 
----给某个单位建一个叠在血条上的文字。框体不存在就返回 nil（下次再试）。
+local SEGMENT_GAP = 6
+
+---@param host table 血条（找不到血条时是覆盖帧）
+local function MakeSegment(host, justify, x)
+    local fontString = host:CreateFontString(nil, "OVERLAY")
+
+    local path, size, flags = GetFont()
+    if fontString.SetFont then
+        fontString:SetFont(path, math.max(10, (size or 12) - 1), flags)
+    end
+    if fontString.SetJustifyH then fontString:SetJustifyH(justify) end
+    -- 不设宽度的话，某些客户端上 FontString 会按 0 宽排版，字挤成一条看不见
+    if fontString.SetWidth then fontString:SetWidth(220) end
+    fontString:SetTextColor(1, 1, 1)
+    -- 血条底色是深红，纯白字在缩放后容易糊，加 1px 阴影
+    if fontString.SetShadowColor then fontString:SetShadowColor(0, 0, 0, 1) end
+    if fontString.SetShadowOffset then fontString:SetShadowOffset(1, -1) end
+    -- 顶到 OVERLAY 的最高子层：pfUI 自己的血量文字也在 OVERLAY，
+    -- 不抬子层的话谁后画谁在上，我们的字可能被盖住
+    if fontString.SetDrawLayer then pcall(fontString.SetDrawLayer, fontString, "OVERLAY", 7) end
+
+    if justify == "RIGHT" then
+        fontString:SetPoint("RIGHT", host, "CENTER", -x, 0)
+    elseif justify == "LEFT" then
+        fontString:SetPoint("LEFT", host, "CENTER", x, 0)
+    else
+        fontString:SetPoint("CENTER", host, "CENTER", 0, 0)
+    end
+    return fontString
+end
+
+---给某个单位建三个文字段。框体不存在就返回 nil（下次再试）。
 local function CreateEntry(unit, frame, bar)
     frame = frame or ResolveHost(unit)
     if not frame then return nil end
     if not bar then bar = PickHealthBar(frame) end
 
-    local text
+    local host
     if bar then
         -- 文字必须建在血条自己身上，不能建在 TargetFrame 上：
         -- 血条是 TargetFrame 的子帧，子帧的绘制层级永远高于父帧的任何 layer，
         -- 挂在父帧 OVERLAY 上的文字会被血条整个盖住。
-        text = bar:CreateFontString(nil, "OVERLAY")
+        host = bar
         QCT.Log:Add("health", unit, "文字挂血条 |", FrameName(bar))
     else
         -- 兜底：有些自定义 UI 的血条不是 StatusBar（Frame + 贴图做的），递归找不到。
         -- 这时在框体上叠一层独立 Frame，层级抬到所有子帧之上，文字放框体中央。
-        -- 位置不完美，但至少能看见，也好过完全不显示。
         local overlay = CreateFrame("Frame", nil, frame)
         if overlay.SetAllPoints then overlay:SetAllPoints(frame) end
         if overlay.SetFrameLevel and frame.GetFrameLevel then
             local ok, level = pcall(frame.GetFrameLevel, frame)
             overlay:SetFrameLevel((ok and tonumber(level) or 1) + 50)
         end
-        text = overlay:CreateFontString(nil, "OVERLAY")
+        host = overlay
         QCT.Log:Add("health", unit, "没找到血条，用框体中央兜底 |", FrameName(frame))
     end
 
-    local path, size, flags = GetFont()
-    if text.SetFont then text:SetFont(path, math.max(10, (size or 12) - 1), flags) end
-    text:SetPoint("CENTER", bar or text:GetParent(), "CENTER", 0, 0)
-    if text.SetJustifyH then text:SetJustifyH("CENTER") end
-    -- 不设宽度的话，某些客户端上 FontString 会按 0 宽排版，字挤成一条看不见
-    if text.SetWidth then text:SetWidth(220) end
-    text:SetTextColor(1, 1, 1)
-    -- 和 tooltip 一样加 1px 阴影：血条底色是深红，纯白字在缩放后容易糊
-    if text.SetShadowColor then text:SetShadowColor(0, 0, 0, 1) end
-    if text.SetShadowOffset then text:SetShadowOffset(1, -1) end
-    -- 顶到 OVERLAY 的最高子层：pfUI 这类 UI 包自己的血量文字也在 OVERLAY，
-    -- 不抬子层的话谁后画谁在上，我们的字可能被盖住
-    if text.SetDrawLayer then pcall(text.SetDrawLayer, text, "OVERLAY", 7) end
-    text:SetText("")
+    local entry = {
+        frame = frame,
+        bar = bar,
+        cur = MakeSegment(host, "RIGHT", SEGMENT_GAP),
+        sep = MakeSegment(host, "CENTER", 0),
+        max = MakeSegment(host, "LEFT", SEGMENT_GAP),
+    }
+    entry.sep:SetText("/")
+    entry.cur:SetText("")
+    entry.max:SetText("")
 
-    local entry = { frame = frame, bar = bar, text = text, last = "" }
     entries[unit] = entry
     return entry
 end
@@ -259,21 +297,45 @@ local function NumberOf(fn, unit)
     if type(fn) ~= "function" then return nil end
     local ok, value = pcall(fn, unit)
     if not ok then return nil end
-    local nok, num = pcall(tonumber, value)
-    if nok and type(num) == "number" then return num end
-    return nil
+    -- 这里故意不 tonumber：secret value 过一遍 tonumber 还是 secret，
+    -- 能不能用只能交给 SetText 去试
+    return value
 end
 
 local function UnitExistsSafe(unit)
     if type(UnitExists) ~= "function" then return NumberOf(UnitHealth, unit) ~= nil end
     local ok, value = pcall(UnitExists, unit)
     if ok then
-        -- 这个客户端上「单位是否存在」的返回值可能是 secret value，比较会抛错，所以再包一层
         local cok, truthy = pcall(function() return value and true or false end)
         if cok then return truthy end
     end
-    -- 比较被拒绝（secret value）：退回看血量能不能取到
     return NumberOf(UnitHealth, unit) ~= nil
+end
+
+---把原始值交给 SetText。返回 false 表示这个客户端连显示都不允许。
+local function ShowValue(fontString, value)
+    if not fontString then return false end
+    local ok = pcall(fontString.SetText, fontString, value)
+    return ok
+end
+
+local function HideEntry(entry)
+    if not entry then return end
+    for _, key in ipairs({ "cur", "sep", "max" }) do
+        local fontString = entry[key]
+        if fontString then
+            pcall(fontString.SetText, fontString, "")
+            pcall(fontString.Hide, fontString)
+        end
+    end
+end
+
+local function ShowEntry(entry)
+    if not entry then return end
+    for _, key in ipairs({ "cur", "sep", "max" }) do
+        local fontString = entry[key]
+        if fontString then pcall(fontString.Show, fontString) end
+    end
 end
 
 ---现在的框体还能用就返回；看不见了就重新挑一个（换目标、UI 包刚建好自绘框体都会走到这里）。
@@ -293,10 +355,8 @@ local function EnsureEntry(unit)
     if not frame then return entry end
     if entry and entry.frame == frame and entry.bar == bar then return entry end
 
-    if entry then
-        if entry.text and entry.text.Hide then pcall(entry.text.Hide, entry.text) end
-        entries[unit] = nil
-    end
+    if entry then HideEntry(entry) end
+    entries[unit] = nil
     return CreateEntry(unit, frame, bar)
 end
 
@@ -306,9 +366,9 @@ local function UpdateUnit(unit)
     local entry = entries[unit]
 
     if not UnitExistsSafe(unit) then
-        if entry and entry.last ~= "" then
-            entry.text:SetText("")
-            entry.last = ""
+        if entry then
+            pcall(entry.cur.SetText, entry.cur, "")
+            pcall(entry.max.SetText, entry.max, "")
         end
         return
     end
@@ -318,12 +378,27 @@ local function UpdateUnit(unit)
 
     local cur = NumberOf(UnitHealth, unit)
     local max = NumberOf(UnitHealthMax, unit)
-    if not cur or not max or max <= 0 then return end
+    if cur == nil or max == nil then return end
 
-    local value = string.format("%d / %d", cur, max)
-    if value ~= entry.last then
-        entry.text:SetText(value)
-        entry.last = value
+    -- 注意：这里绝不能写 string.format("%d / %d", cur, max)。
+    -- 血量是 secret value，一格式化就抛错，整个更新静默失败 —— 这正是之前三轮没修好的原因。
+    local okCur = ShowValue(entry.cur, cur)
+    local okMax = ShowValue(entry.max, max)
+
+    if okCur and okMax then
+        if entry.blocked then
+            entry.blocked = false
+            ShowEntry(entry)
+            QCT.Log:Add("health", unit, "血量数值已恢复显示")
+        end
+        return
+    end
+
+    -- 连 SetText 都不接受：这个客户端不允许插件显示血量。藏起来，只记一次日志，别刷屏。
+    if not entry.blocked then
+        entry.blocked = true
+        HideEntry(entry)
+        QCT.Log:Add("health", unit, "客户端拒绝显示血量数值（secret value）")
     end
 end
 
@@ -338,11 +413,11 @@ function H:Enable()
     self.enabled = true
     for _, unit in ipairs(UNITS) do
         local old = entries[unit]
-        if old and old.text and old.text.Hide then pcall(old.text.Hide, old.text) end
+        if old then HideEntry(old) end
         entries[unit] = nil
         lastResolve[unit] = nil
         local entry = CreateEntry(unit)
-        if entry then entry.text:Show() end
+        if entry then ShowEntry(entry) end
     end
     UpdateAll()
 end
@@ -350,11 +425,8 @@ end
 function H:Disable()
     self.enabled = false
     for _, entry in pairs(entries) do
-        if entry.text then
-            entry.text:SetText("")
-            entry.text:Hide()
-        end
-        entry.last = ""
+        HideEntry(entry)
+        entry.blocked = false
     end
 end
 
@@ -398,8 +470,8 @@ end
 
 ---`/qct health` 用：把「框体找没找到 / 血条找没找到 / 文字状态」全打出来。
 ---玩家反馈「血量不显示」时，光看代码猜不出来，得看实际结构。
----整段包 pcall：这个客户端上随便哪个返回值是 secret value，诊断本身就先炸了，
----上一版就是这样——只打出「开关: true」两行，后面的全没了，等于没诊断。
+---整段包 pcall：这个客户端上随便哪个返回值是 secret value，诊断本身就会先炸，
+---上一版就是这样 —— 只打出「开关: true」两行，后面的全没了，等于没诊断。
 function H:Diagnose()
     QCT:Print("---- 血量诊断 ----")
     QCT:Print("开关:", Safe(QCT.db and QCT.db.showHealth))
@@ -413,17 +485,19 @@ function H:Diagnose()
             QCT:Print(unit, "| 单位存在:", Safe(exists),
                 "| 血量:", Safe(cur), "/", Safe(max))
 
+            -- 关键：分清「读得到」和「能显示」。
+            -- 这个客户端上血量读得到（tonumber 不报错），但一格式化就抛 secret，
+            -- 所以必须分别探一次，否则永远不知道卡在哪一步。
+            local formatOk = pcall(string.format, "%d / %d", cur or 0, max or 0)
+            QCT:Print("  能格式化成字符串:", Safe(formatOk))
+
             local entry = entries[unit]
             if entry then
-                local visible = "?"
-                if entry.text and type(entry.text.IsVisible) == "function" then
-                    local vok, value = pcall(entry.text.IsVisible, entry.text)
-                    visible = vok and Safe(value) or "?"
-                end
-                local tok, text = pcall(function() return entry.text:GetText() end)
+                local tok, text = pcall(entry.cur.GetText, entry.cur)
                 QCT:Print("  文字:", tok and Safe(text) or "<读不到>",
-                    "| 可见:", visible,
-                    "| 挂在:", FrameName(entry.bar or entry.frame))
+                    "| 可见:", Safe(IsVisibleChain(entry.cur)),
+                    "| 挂在:", FrameName(entry.bar or entry.frame),
+                    "| 被客户端拒绝:", Safe(entry.blocked))
             else
                 QCT:Print("  文字: 还没创建")
             end

@@ -82,11 +82,27 @@ end
 
 local PREFIX = L["|cff33ff99任务链提示|r: "]
 
----@param ... any 可以传多个值，会自动 tostring 后用空格连起来
+---把任意值变成「能安全塞进字符串」的东西。
+---
+---这个坑踩了很久，记在这里：客户端把一部分返回值（tooltip 文本、单位血量…）标成
+---secret value。对它调用 tostring() **不会报错**，而是把 secret 原样返回，
+---真正抛错的是之后的 table.concat / `..`：`invalid value (secret) at index 5`。
+---所以不能靠 pcall(tostring) 判断，必须拿「拼一次」当探针。
+local function SafeText(value)
+    if value == nil then return "nil" end
+    local ok, text = pcall(tostring, value)
+    if not ok then return "<secret>" end
+    local ok2, probe = pcall(function() return text .. "" end)
+    if ok2 and type(probe) == "string" then return probe end
+    return "<secret>"
+end
+QCT.SafeText = SafeText
+
+---@param ... any 可以传多个值，会自动转成字符串后用空格连起来
 function QCT:Print(...)
     local parts = {}
     for i = 1, select("#", ...) do
-        parts[i] = tostring((select(i, ...)))
+        parts[i] = SafeText((select(i, ...)))
     end
     DEFAULT_CHAT_FRAME:AddMessage(PREFIX .. table.concat(parts, " "))
 end
@@ -95,7 +111,7 @@ function QCT:Debug(...)
     if not QCT.db.debug then return end
     local parts = {}
     for i = 1, select("#", ...) do
-        parts[#parts + 1] = tostring((select(i, ...)))
+        parts[#parts + 1] = SafeText((select(i, ...)))
     end
     DEFAULT_CHAT_FRAME:AddMessage("|cff808080[QCT]|r " .. table.concat(parts, " "))
 end
@@ -106,7 +122,7 @@ function QCT:Trace(tag, ...)
     if QCT.db and QCT.db.debug then
         local parts = {}
         for i = 1, select("#", ...) do
-            parts[#parts + 1] = tostring((select(i, ...)))
+            parts[#parts + 1] = SafeText((select(i, ...)))
         end
         DEFAULT_CHAT_FRAME:AddMessage("|cff808080[QCT]|r " .. table.concat(parts, " "))
     end
@@ -297,6 +313,7 @@ local function PrintHelp()
     QCT:Print(L["  |cffffff00/qct logkey <alt|ctrl|none>|r - 任务日志里开详情窗的键（默认 alt）"])
     QCT:Print(L["  |cffffff00/qct health|r - 血量显示诊断（框体/血条/文字状态）"])
     QCT:Print(L["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"])
+    QCT:Print(L["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"])
     QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
     QCT:Print(L["  |cffffff00/qct pwidth <240-560>|r - 悬停面板宽度"])
 end
@@ -474,6 +491,12 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
     elseif cmd == "qlog" then
         if QCT.Tooltip and QCT.Tooltip.DiagnoseQuestLog then
             QCT.Tooltip:DiagnoseQuestLog()
+        else
+            QCT:Print("提示模块未加载")
+        end
+    elseif cmd == "mouse" then
+        if QCT.Tooltip and QCT.Tooltip.DiagnoseMouse then
+            QCT.Tooltip:DiagnoseMouse()
         else
             QCT:Print("提示模块未加载")
         end

@@ -1063,6 +1063,44 @@ function T:QuestIdUnderMouse()
     return nil
 end
 
+---按了任务日志快捷键却什么也没弹时，直接把「插件到底看到了什么」播报到聊天框。
+---
+---为什么要自动播报而不是让玩家去输 /qct qlog：那个命令要打字，鼠标一离开任务行，
+---诊断到的就不是「按 Alt 那一刻」的状态了，等于白问。这里在按键的那一刻现场取证。
+---只在任务日志开着、或鼠标确实压在任务日志行上时才说话，避免玩家拿 Alt 做别的事被刷屏。
+local lastMissAt = 0
+
+function T:ExplainQuestLogMiss()
+    local focus
+    if type(GetMouseFocus) == "function" then
+        local ok, value = pcall(GetMouseFocus)
+        if ok then focus = value end
+    end
+
+    local logShown = QuestLogShown()
+    local onRow = focus ~= nil and IsQuestLogRow(focus)
+    if not (logShown or onRow) then return end
+
+    local now = type(GetTime) == "function" and GetTime() or 0
+    if now - lastMissAt < 3 then return end
+    lastMissAt = now
+
+    local tip = _G.GameTooltip
+    local tipShown = tip ~= nil and type(tip.IsShown) == "function" and tip:IsShown()
+    local owner = tipShown and CurrentOwner(tip) or nil
+
+    QCT:Print("按", QuestLogKeyLabel(), "没找到任务行 | 鼠标焦点:",
+        SafeName(focus) or "无",
+        "| 焦点 ID:", tostring(SafeMethodNumber(focus, "GetID")),
+        "| 任务日志开着:", logShown and "是" or "否",
+        "| 提示框:", tipShown and "显示" or "隐藏",
+        "| 持有者:", SafeName(owner) or "无")
+    if focus then
+        QCT:Print("  焦点祖先链:", self:DescribeFrameChain(focus))
+    end
+    QCT:Print("  把这一行发给作者就能定位。也可以试 /qct mouse 看更详细的信息。")
+end
+
 ---把帧的祖先链描述出来，排查「这个提示到底是谁弹的」用
 function T:DescribeFrameChain(owner)
     local parts = {}
@@ -1556,7 +1594,17 @@ function T:OnModifierChanged(viaKey)
         end
     end
 
+    local windowBefore = QCT.Window and QCT.Window:IsShown() and QCT.Window.questId or nil
     self:TryOpenFromHover("modifier", viaKey)
+
+    -- 两条路都没开出窗：把现场证据播报出来，省得玩家再回来问「按了没反应」。
+    if viaKey and viaKey == QuestLogKey() then
+        local windowNow = QCT.Window and QCT.Window:IsShown() and QCT.Window.questId or nil
+        if not windowNow or windowNow == windowBefore then
+            local ok, err = pcall(self.ExplainQuestLogMiss, self)
+            if not ok then QCT.Log:Add("questlog", "播报失败:", tostring(err)) end
+        end
+    end
 end
 
 ---每一步单独 pcall：这个客户端上任何一个钩子挂不上，都不能连累后面的步骤。
@@ -1740,6 +1788,46 @@ function T:SelfTest()
         QCT:Print("|cffff0000面板 Show() 之后仍是隐藏状态，说明 Frame 创建有问题。|r")
     end
     return panel
+end
+
+---`/qct mouse` 用：鼠标现在到底压在哪。
+---任务日志这条路全押在 GetMouseFocus 上，所以必须能一眼看出它返回了什么。
+function T:DiagnoseMouse()
+    QCT:Print("---- 鼠标诊断 ----")
+
+    local focus
+    if type(GetMouseFocus) == "function" then
+        local ok, value = pcall(GetMouseFocus)
+        if ok then focus = value end
+    else
+        QCT:Print("|cffff0000这个客户端没有 GetMouseFocus|r")
+    end
+
+    QCT:Print("任务日志开着:", QuestLogShown() and "是" or "否",
+        "| 日志帧:", _G.QuestLogFrame and "有" or "无")
+
+    if not focus then
+        QCT:Print("鼠标焦点: 无")
+    else
+        local kind = "?"
+        local kok, value = pcall(function() return focus.GetObjectType() end)
+        if kok and type(value) == "string" then kind = value end
+        QCT:Print("鼠标焦点:", SafeName(focus) or "<无名>",
+            "| 类型:", kind,
+            "| ID:", tostring(SafeMethodNumber(focus, "GetID")),
+            "| 算任务日志行:", IsQuestLogRow(focus) and "是" or "否")
+        QCT:Print("  祖先链:", self:DescribeFrameChain(focus))
+    end
+
+    local tip = _G.GameTooltip
+    local tipShown = tip ~= nil and type(tip.IsShown) == "function" and tip:IsShown()
+    local owner = tipShown and CurrentOwner(tip) or nil
+    QCT:Print("提示框:", tipShown and "显示" or "隐藏",
+        "| 持有者:", SafeName(owner) or "无",
+        "| 算任务日志行:", tostring(owner ~= nil and IsQuestLogButton(owner) or false))
+
+    local questId, source = self:QuestIdUnderMouse()
+    QCT:Print("鼠标下能定位到的任务:", tostring(questId), "| 来源:", tostring(source))
 end
 
 ---`/qct qlog` 用：任务日志这条快捷键路的完整状态。

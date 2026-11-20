@@ -117,6 +117,8 @@ local zhTW = {
         "  |cffffff00/qct health|r - 血量顯示診斷（框體/血條/文字狀態）",
     ["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"] =
         "  |cffffff00/qct qlog|r - 任務日誌快捷鍵診斷",
+    ["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"] =
+        "  |cffffff00/qct mouse|r - 滑鼠現在壓在哪個幀上（祖先鏈 / ID / 提示框持有者）",
     ["自动"] = "自動",
     ["窄"] = "窄",
     ["标准"] = "標準",
@@ -309,6 +311,8 @@ local enUS = {
         "  |cffffff00/qct health|r - health display diagnostics (frame / bar / text)",
     ["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"] =
         "  |cffffff00/qct qlog|r - quest log hotkey diagnostics",
+    ["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"] =
+        "  |cffffff00/qct mouse|r - which frame is under the mouse (ancestors / ID / tooltip owner)",
     ["自动"] = "Auto",
     ["窄"] = "Narrow",
     ["标准"] = "Standard",
