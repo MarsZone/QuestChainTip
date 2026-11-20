@@ -86,14 +86,22 @@ local PREFIX = L["|cff33ff99任务链提示|r: "]
 ---
 ---这个坑踩了很久，记在这里：客户端把一部分返回值（tooltip 文本、单位血量…）标成
 ---secret value。对它调用 tostring() **不会报错**，而是把 secret 原样返回，
----真正抛错的是之后的 table.concat / `..`：`invalid value (secret) at index 5`。
----所以不能靠 pcall(tostring) 判断，必须拿「拼一次」当探针。
+---真正抛错的是之后的 table.concat / `..` / string.format。
+---
+---探针必须用「真正会触发 secret 检查」的操作。**踩过的坑**：一开始用 `text .. ""`
+---当探针，结果这个客户端把「拼空串」当恒等运算放过了 —— 探针通过、secret 被当普通
+---字符串返回，最后在 table.concat 那里炸（`Core.lua:107: invalid value (secret) at index 5`）。
+---现在同时用 `.. "x"`、string.format、string.len 三道，任一抛错就判定为 secret。
 local function SafeText(value)
     if value == nil then return "nil" end
     local ok, text = pcall(tostring, value)
     if not ok then return "<secret>" end
-    local ok2, probe = pcall(function() return text .. "" end)
-    if ok2 and type(probe) == "string" then return probe end
+    local probeOk = pcall(function()
+        local probe = text .. "x"
+        probe = string.format("%s", probe)
+        return string.len(probe) > 0
+    end)
+    if probeOk then return text end
     return "<secret>"
 end
 QCT.SafeText = SafeText
@@ -313,6 +321,7 @@ local function PrintHelp()
     QCT:Print(L["  |cffffff00/qct logkey <alt|ctrl|none>|r - 任务日志里开详情窗的键（默认 alt）"])
     QCT:Print(L["  |cffffff00/qct health|r - 血量显示诊断（框体/血条/文字状态）"])
     QCT:Print(L["  |cffffff00/qct health <帧名>|r - 手动指定目标血量挂在哪个框体上（reset 恢复自动）"])
+    QCT:Print(L["  |cffffff00/qct health scan|r - 列出所有可见框体的名字与坐标，用来找出该挂哪个"])
     QCT:Print(L["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"])
     QCT:Print(L["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"])
     QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
@@ -490,6 +499,8 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
                 QCT.Health:ClearForced()
                 QCT.Health:Refresh()
                 QCT:Print("血量显示已恢复自动选择框体")
+            elseif want == "scan" then
+                QCT.Health:Scan()
             elseif want ~= "" then
                 -- /qct health <帧名>：手动指定目标框体
                 local ok, err = QCT.Health:UseFrame("target", want)

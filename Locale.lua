@@ -117,6 +117,8 @@ local zhTW = {
         "  |cffffff00/qct health|r - 血量顯示診斷（框體/血條/文字狀態）",
     ["  |cffffff00/qct health <帧名>|r - 手动指定目标血量挂在哪个框体上（reset 恢复自动）"] =
         "  |cffffff00/qct health <幀名>|r - 手動指定目標血量掛在哪個框體上（reset 恢復自動）",
+    ["  |cffffff00/qct health scan|r - 列出所有可见框体的名字与坐标，用来找出该挂哪个"] =
+        "  |cffffff00/qct health scan|r - 列出所有可見框體的名字與座標，用來找出該掛哪個",
     ["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"] =
         "  |cffffff00/qct qlog|r - 任務日誌快捷鍵診斷",
     ["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"] =
@@ -313,6 +315,8 @@ local enUS = {
         "  |cffffff00/qct health|r - health display diagnostics (frame / bar / text)",
     ["  |cffffff00/qct health <帧名>|r - 手动指定目标血量挂在哪个框体上（reset 恢复自动）"] =
         "  |cffffff00/qct health <frame>|r - force the target health text onto a specific frame (reset = auto)",
+    ["  |cffffff00/qct health scan|r - 列出所有可见框体的名字与坐标，用来找出该挂哪个"] =
+        "  |cffffff00/qct health scan|r - list visible frames with names and positions",
     ["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"] =
         "  |cffffff00/qct qlog|r - quest log hotkey diagnostics",
     ["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"] =

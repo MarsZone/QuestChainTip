@@ -37,14 +37,19 @@ local entries = {}
 -- 安全取值
 --------------------------------------------------------------------------------
 
----secret value 对 tostring() 不报错、只是原样返回，真正抛错的是之后的拼接。
----所以这里必须拿「拼一次」当探针，不能只 pcall(tostring)。
+---secret value 对 tostring() 不报错、只是原样返回，真正抛错的是之后的拼接/格式化。
+---探针必须用真正会触发检查的操作：`.. ""` 在这个客户端上会被当恒等运算放过，
+---所以同时用 `.. "x"`、string.format、string.len 三道。
 local function Safe(value)
     if value == nil then return "nil" end
     local ok, text = pcall(tostring, value)
     if not ok then return "<secret>" end
-    local ok2, probe = pcall(function() return text .. "" end)
-    if ok2 and type(probe) == "string" then return probe end
+    local probeOk = pcall(function()
+        local probe = text .. "x"
+        probe = string.format("%s", probe)
+        return string.len(probe) > 0
+    end)
+    if probeOk then return text end
     return "<secret>"
 end
 
@@ -167,6 +172,17 @@ local function BigEnough(frame)
     return w >= 40 and h >= 15
 end
 
+---名字看起来像不像这个单位的框体（pfUI_uf_target、SUF_Target、oUF_Target…）。
+---光靠 `child.unit == "target"` 不够：有的 UI 包不给帧设 unit 字段，
+---但名字一般还是以 target / focus 结尾。
+---只认后缀，避免把 TargetFrameSpellBar、TargetFrameTextureFrameHealthBar 这种子帧认进来。
+local function NameLooksLike(unit, name)
+    if type(name) ~= "string" then return false end
+    local lower = name:lower()
+    if unit == "target" then return lower:match("target$") ~= nil end
+    return lower:match("focus$") ~= nil
+end
+
 ---所有可能是「这个单位的框体」的帧，按优先级排。
 ---
 ---**自绘 UI 的框体排在暴雪默认框体前面**，这是 1.5.20 改的：
@@ -195,16 +211,19 @@ local function Candidates(unit)
         if frame ~= blizzard then add(frame) end
     end
 
-    -- 2) 兜底：在 UIParent 里扫一遍，找 unit 字段对得上、可见、且有实际尺寸的
+    -- 2) 兜底：在 UIParent 里扫一遍。两个判据取并集 ——
+    --    unit 字段对得上，或者名字以 target / focus 结尾。
     local function scan(parent, depth)
         if depth > 3 or not parent or type(parent.GetChildren) ~= "function" then return end
         local ok, children = pcall(parent.GetChildren, parent)
         if not ok or type(children) ~= "table" then return end
         for _, child in ipairs(children) do
-            local uok, value = pcall(function() return child.unit end)
-            if uok and value == unit and child ~= blizzard
-                and IsVisibleChain(child) and BigEnough(child) then
-                add(child)
+            if child ~= blizzard and IsVisibleChain(child) and BigEnough(child) then
+                local uok, value = pcall(function() return child.unit end)
+                local nok, name = pcall(child.GetName, child)
+                local byUnit = uok and value == unit
+                local byName = nok and NameLooksLike(unit, name)
+                if byUnit or byName then add(child) end
             end
             scan(child, depth + 1)
         end
@@ -406,7 +425,16 @@ local function UpdateUnit(unit)
     end
 
     entry = EnsureEntry(unit)
-    if not entry then return end
+    if not entry then
+        -- 一个候选框体都没找到：说一声，否则玩家只会觉得「功能没生效」
+        self.announced = self.announced or {}
+        local key = unit .. ":noframe"
+        if not self.announced[key] then
+            self.announced[key] = true
+            QCT:Print("没找到可用的", unit, "框体，血量数字无处可挂。用 /qct health scan 看看有哪些框体。")
+        end
+        return
+    end
 
     local cur = NumberOf(UnitHealth, unit)
     local max = NumberOf(UnitHealthMax, unit)
@@ -440,6 +468,7 @@ local function UpdateUnit(unit)
         entry.blocked = true
         HideEntry(entry)
         QCT.Log:Add("health", unit, "客户端拒绝显示血量数值（secret value）")
+        QCT:Print("血量数值显示被客户端拒绝（secret value），已隐藏。用 /qct health 看详情。")
     end
 end
 
@@ -533,6 +562,65 @@ function H:GetEntry(unit)
     return entries[unit]
 end
 
+---`/qct health scan` 用：把所有**看得见的、够大的**具名框体列出来（带屏幕坐标）。
+---自动挑选在自绘 UI 上不一定猜得准，这时候让玩家按坐标认出「我要的是这个」，
+---再用 /qct health <帧名> 指定，比来回猜快得多。
+function H:Scan()
+    QCT:Print("---- 可见框体一览（按屏幕位置排序） ----")
+
+    local list = {}
+    local function walk(parent, depth)
+        if depth > 3 or not parent or type(parent.GetChildren) ~= "function" then return end
+        local ok, children = pcall(parent.GetChildren, parent)
+        if not ok or type(children) ~= "table" then return end
+        for _, child in ipairs(children) do
+            local name = FrameName(child)
+            if name ~= "<无名>" and name ~= "?" and IsVisibleChain(child) and BigEnough(child) then
+                local itemOk, item = pcall(function()
+                    local left, top, w, h = 0, 0, 0, 0
+                    if type(child.GetLeft) == "function" then
+                        local v = child:GetLeft()
+                        if type(v) == "number" then left = v end
+                    end
+                    if type(child.GetTop) == "function" then
+                        local v = child:GetTop()
+                        if type(v) == "number" then top = v end
+                    end
+                    if type(child.GetWidth) == "function" then
+                        local v = child:GetWidth()
+                        if type(v) == "number" then w = v end
+                    end
+                    if type(child.GetHeight) == "function" then
+                        local v = child:GetHeight()
+                        if type(v) == "number" then h = v end
+                    end
+                    return { name = name, left = left, top = top, w = w, h = h,
+                        hasBar = PickHealthBar(child) ~= nil }
+                end)
+                if itemOk and item and item.w >= 60 and item.h >= 18 then
+                    list[#list + 1] = item
+                end
+            end
+            walk(child, depth + 1)
+        end
+    end
+    walk(_G.UIParent, 0)
+
+    table.sort(list, function(a, b)
+        if math.abs(a.top - b.top) > 5 then return a.top < b.top end
+        return a.left < b.left
+    end)
+
+    for index, item in ipairs(list) do
+        if index > 30 then break end
+        QCT:Print("  " .. item.name,
+            "位置(" .. item.left .. "," .. item.top .. ")",
+            "尺寸" .. item.w .. "x" .. item.h,
+            item.hasBar and "[有血条]" or "")
+    end
+    QCT:Print("共", #list, "个。找到你要的那个后：/qct health <帧名> 指定，/qct health reset 恢复自动")
+end
+
 ---`/qct health` 用：把「框体找没找到 / 血条找没找到 / 文字状态」全打出来。
 ---玩家反馈「血量不显示」时，光看代码猜不出来，得看实际结构。
 ---整段包 pcall：这个客户端上随便哪个返回值是 secret value，诊断本身就会先炸，
@@ -555,6 +643,17 @@ function H:Diagnose()
             -- 所以必须分别探一次，否则永远不知道卡在哪一步。
             local formatOk = pcall(string.format, "%d / %d", cur or 0, max or 0)
             QCT:Print("  能格式化成字符串:", Safe(formatOk))
+
+            -- 单独探一次 SetText：如果连这个都不接受，那就真的没法显示，
+            -- 跟框体/层级无关，不用再猜了。用一个临时 FontString，不动真实文字。
+            local setTextOk = pcall(function()
+                local probe = _G.UIParent:CreateFontString(nil, "OVERLAY")
+                local ok = pcall(probe.SetText, probe, cur)
+                pcall(probe.SetText, probe, "")
+                pcall(probe.Hide, probe)
+                return ok
+            end)
+            QCT:Print("  能直接 SetText 原始血量:", Safe(setTextOk))
 
             local entry = entries[unit]
             if entry then

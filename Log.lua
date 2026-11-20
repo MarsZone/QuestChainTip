@@ -48,6 +48,10 @@ local function SafeStr(value)
     local kind = type(value)
     if value == nil then return "nil" end
     if kind == "number" or kind == "boolean" then
+        -- 注意：不能直接 tostring 了事。这个客户端会把单位血量这类数字标成 secret，
+        -- tostring 不报错、原样返回 secret，最后在 table.concat 那里炸。
+        -- 走 QCT.SafeText 做探针，secret 会被替换成 <secret>。
+        if QCT.SafeText then return QCT.SafeText(value) end
         return tostring(value)
     end
     if kind == "string" then

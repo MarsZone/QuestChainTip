@@ -1,5 +1,23 @@
 # 更新日志 / Changelog
 
+## 1.5.21
+
+**修探针 bug（诊断又崩了）；新增 /qct health scan**
+
+- **`/qct health` 还是崩**（`Core.lua:107: invalid value (secret) at index 5`）：
+  判断 secret 的探针写错了 —— 用 `text .. ""`（拼空串）去试，但这个客户端把拼空串当恒等运算
+  放过了，探针通过、secret 被当普通字符串返回，最后在 `table.concat` 才炸。
+  现在同时用 `.. "x"`、`string.format`、`string.len` 三道探针
+- 后台日志也修了：数字类型原来直接 `tostring` 返回，secret 会一路漏到 `table.concat`，
+  日志本身也能把插件搞崩
+- **找不到框体时不再静默**：会打「没找到可用的 target 框体…用 /qct health scan 看看」
+- `/qct health` 新增「能直接 SetText 原始血量」探测，用来区分
+  「只是不能读出来加工」和「客户端根本不允许显示」
+- 新增 `/qct health scan`：列出所有可见具名框体的名字、屏幕坐标、尺寸、有没有血条，
+  找到目标框体后用 `/qct health <帧名>` 直接指定，`/qct health reset` 恢复自动
+- 候选框体识别放宽：`unit` 字段对得上 **或** 名字以 target/focus 结尾（只认后缀，
+  避免把 `TargetFrameSpellBar` 这类子帧认进来）
+
 ## 1.5.20
 
 **血量挂错了框体；任务日志 Alt 的根因是客户端没有 GetMouseFocus**
