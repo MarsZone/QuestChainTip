@@ -2686,6 +2686,13 @@ function T:Enable()
                         local qid = T:ResolveQuestIdFromOwner(hoverOwner)
                         if qid then
                             T.lastQuestId = qid
+                            if QCT.Window and QCT.Window:IsShown()
+                                and QCT.Window.questId == qid then
+                                -- 详情窗已经开着这条链：不再叠面板
+                                T:Hide()
+                                T.mapHoverOwner = hoverOwner
+                                pcall(gtip.Hide, gtip)
+                            else
                             T:Update(qid)
                             if T.panel ~= nil and T.panel:IsShown() == true then
                                 T.mapHoverOwner = hoverOwner
@@ -2698,6 +2705,7 @@ function T:Enable()
                                 T.suppressTipHide = true
                                 pcall(gtip.Hide, gtip)
                                 T.suppressTipHide = false
+                            end
                             end
                         end
                     end
@@ -2949,6 +2957,17 @@ function T:TryTakeOverIconTooltip(iconData, tooltip, owner)
         questId = self:ResolveQuestIdFromOwner(iconData)
     end
     if not questId then return false end
+
+    -- 详情窗已经开着这条链：不要再叠一个悬停面板（1.5.47 玩家截图就是两个框同时在）
+    if QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId then
+        self:Hide()
+        self.mapHoverOwner = icon
+        if T.CursorPos then
+            local cx, cy = T.CursorPos()
+            self.mapHoverCursor = cx and { x = cx, y = cy } or nil
+        end
+        return true
+    end
 
     self:Update(questId)
     if not (self.panel and self.panel:IsShown()) then
