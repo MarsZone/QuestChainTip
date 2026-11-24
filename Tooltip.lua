@@ -14,6 +14,7 @@ local T = {}
 QCT.Tooltip = T
 
 local PANEL_NAME = "QuestChainTipPanel"
+local TAB_BUTTON = "QuestChainTipTabButton"
 local PAD_X, PAD_Y = 10, 8
 local LINE_HEIGHT = 15
 local MAX_ROWS = 42
@@ -276,13 +277,13 @@ local function GetFont()
     return fontPath, fontSize, fontFlags
 end
 
-function T:CreatePanel()
-    if self.panel then return self.panel end
-
+---@param name string? 帧名（副面板用别的名字，避免重名）
+---@return table panel
+function T:CreatePanelFrame(name)
     textWidth = ResolveTextWidth()
 
     local template = BackdropTemplateMixin and "BackdropTemplate" or nil
-    local panel = CreateFrame("Frame", PANEL_NAME, UIParent, template)
+    local panel = CreateFrame("Frame", name or PANEL_NAME, UIParent, template)
     panel:SetSize(textWidth + PAD_X * 2, 80)
     panel:SetFrameStrata("TOOLTIP")
     panel:SetFrameLevel(500)
@@ -307,10 +308,35 @@ function T:CreatePanel()
         background:SetVertexColor(0, 0, 0, 0.92)
     end
 
+    -- 每帧把面板贴到光标旁（30fps 限流）：面板不跟手会显得很卡
+    local acc = 0
+    panel:SetScript("OnUpdate", function(_, elapsed)
+        acc = acc + (elapsed or 0)
+        if acc < 0.03 then return end
+        acc = 0
+        if T.panelFollows then pcall(T.FollowCursor, T) end
+    end)
+
     panel.rows = {}
     panel:Hide()
 
-    self.panel = panel
+    return panel
+end
+
+function T:CreatePanel()
+    if self.panel then return self.panel end
+    self.panel = self:CreatePanelFrame(PANEL_NAME)
+    return self.panel
+end
+
+---并排展示用的副面板（同一 NPC 的第二个任务）
+---@param index number
+function T:ExtraPanel(index)
+    self.extraPanels = self.extraPanels or {}
+    local panel = self.extraPanels[index]
+    if panel then return panel end
+    panel = self:CreatePanelFrame(PANEL_NAME .. "Alt" .. index)
+    self.extraPanels[index] = panel
     return panel
 end
 
@@ -377,8 +403,10 @@ end
 
 ---把内容行排进面板，并算出面板高度
 ---@param content table[] 每项 { left = string, right = string?, r,g,b }
-function T:Layout(content)
-    local panel = self.panel
+---@param content table[]
+---@param panel table? 目标面板（不传就画在主面板上）
+function T:Layout(content, panel)
+    panel = panel or self.panel
     local y = -PAD_Y
     local count = #content
 
@@ -469,34 +497,105 @@ end
 ---以前是贴在 GameTooltip 下面：Questie 的地图提示框又高又长（一个 NPC 图标能列出十几条），
 ---我们的面板就被顶到离鼠标好几百像素的地方，玩家看着像「点这儿、结果那边弹出来」。
 ---现在直接跟着光标，右下角偏移一点，贴边就翻到另一侧。
-function T:PlacePanel()
+---算出「贴着光标」时面板该放哪。返回 x, y（UIParent 坐标）或 nil。
+---@return number? x, number? y, number? cursorX, number? cursorY
+function T:ComputePanelAnchor()
     local panel = self.panel
-    if not panel then return end
+    if not panel then return nil end
+    if not T.CursorPos then return nil end
 
-    panel:ClearAllPoints()
+    local cx, cy = T.CursorPos()
+    if not cx then return nil end
 
     local screenWidth = UIParent:GetWidth() or 1920
     local screenHeight = UIParent:GetHeight() or 1080
     local panelWidth = panel:GetWidth() or 0
     local panelHeight = panel:GetHeight() or 0
 
-    local cx, cy
-    if T.CursorPos then cx, cy = T.CursorPos() end
-    if cx then
-        local offset = 18
-        local x = cx + offset
-        local y = cy - offset
+    local offset = 18
+    local x = cx + offset
+    local y = cy - offset
 
-        if x + panelWidth > screenWidth - 8 then x = cx - panelWidth - offset end
-        if y - panelHeight < 8 then y = cy + panelHeight + offset end
-        if x < 8 then x = 8 end
-        if y > screenHeight - 8 then y = screenHeight - 8 end
+    if x + panelWidth > screenWidth - 8 then x = cx - panelWidth - offset end
+    if y - panelHeight < 8 then y = cy + panelHeight + offset end
+    if x < 8 then x = 8 end
+    if y > screenHeight - 8 then y = screenHeight - 8 end
 
+    return x, y, cx, cy
+end
+
+---准备「Tab 轮换」列表：当前任务排第一，后面是同一 NPC 的其他任务。
+---@param questId number
+---@param extras number[]
+function T:SetCycleList(questId, extras)
+    local list = { questId }
+    if type(extras) == "table" then
+        for _, id in ipairs(extras) do
+            if id ~= questId and #list < 4 then list[#list + 1] = id end
+        end
+    end
+    self.cycleList = list
+    self.cycleIndex = 1
+end
+
+---Tab：切到同一点位的下一个任务
+function T:CycleQuest()
+    local list = self.cycleList
+    if type(list) ~= "table" or #list < 2 then return false end
+    self.cycleIndex = (self.cycleIndex or 1) % #list + 1
+    local questId = list[self.cycleIndex]
+    if not questId then return false end
+
+    self.suppressTabRebuild = true
+    self:Update(questId)
+    self.suppressTabRebuild = nil
+    return true
+end
+
+---Tab 只在「面板显示着 + 有多个任务」时接管，收起时立刻还回去
+function T:SyncTabBinding()
+    local want = self.panel ~= nil and self.panel:IsShown() == true
+        and type(self.cycleList) == "table" and #self.cycleList > 1
+
+    if want and not self.tabBound then
+        local okAction, action = pcall(GetBindingAction, "TAB")
+        self.tabPrev = (okAction and type(action) == "string" and action ~= "") and action or nil
+        local ok = pcall(SetBindingClick, "TAB", TAB_BUTTON, true)
+        if ok then self.tabBound = true end
+    elseif not want and self.tabBound then
+        pcall(SetBinding, "TAB", self.tabPrev or "TARGETNEARESTENEMY")
+        self.tabBound = nil
+        self.tabPrev = nil
+    end
+end
+
+---给面板显示「第几个 / 共几个」的提示行
+function T:CycleLabel()
+    local list = self.cycleList
+    if type(list) ~= "table" or #list < 2 then return nil end
+    return string.format("%d/%d", self.cycleIndex or 1, #list)
+end
+
+---把面板贴到光标旁边（重建时调用，会记下"画面板时的位置"给离开判断用）
+function T:PlacePanel()
+    local panel = self.panel
+    if not panel then return end
+
+    panel:ClearAllPoints()
+
+    local x, y, cx, cy = self:ComputePanelAnchor()
+    if x then
         panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+        self.panelAtCursor = { x = cx, y = cy }
+        self.panelFollows = true
         return
     end
 
     -- 拿不到光标（极少见）：退回贴着提示框
+    self.panelFollows = false
+    local screenWidth = UIParent:GetWidth() or 1920
+    local panelWidth = panel:GetWidth() or 0
+    local panelHeight = panel:GetHeight() or 0
     local tipLeft = GameTooltip:GetLeft()
     local tipRight = GameTooltip:GetRight()
     local tipBottom = GameTooltip:GetBottom()
@@ -516,6 +615,20 @@ function T:PlacePanel()
     panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 end
 
+---每帧（限流 30fps）跟着鼠标走。
+---玩家反馈「面板不会跟着鼠标移动」——以前只在重建时才摆一次，
+---鼠标小范围挪动（还在图标手柄里）时面板就僵在原地，看着很卡。
+function T:FollowCursor()
+    local panel = self.panel
+    if not panel or not panel:IsShown() or not self.panelFollows then return end
+
+    local x, y = self:ComputePanelAnchor()
+    if not x then return end
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+    pcall(self.PlaceExtraPanels, self)
+end
+
 --------------------------------------------------------------------------------
 -- 内容
 --------------------------------------------------------------------------------
@@ -525,6 +638,11 @@ function T:Hide()
     self.builtShift = nil
     if self.panel and self.panel:IsShown() then
         self.panel:Hide()
+    end
+    if type(self.extraPanels) == "table" then
+        for _, panel in ipairs(self.extraPanels) do
+            if panel and panel:IsShown() then panel:Hide() end
+        end
     end
 end
 
@@ -567,10 +685,19 @@ function T:Update(questId)
         return
     end
     self.lastError = nil
+
+    -- 同一 NPC 有其他任务时，维护「Tab 轮换」列表（切换时不要重置索引）
+    if not self.suppressTabRebuild then
+        self:SetCycleList(questId, self.extraQuests)
+    end
 end
 
-function T:Build(questId)
-    local panel = self:CreatePanel()
+---@param questId number
+---@param panel table? 目标面板（不传就用主面板）
+---@param options table? { noExtras = boolean } 副面板不要再列"其他任务"，否则会互相套
+function T:Build(questId, panel, options)
+    panel = panel or self:CreatePanel()
+    options = options or {}
     self:SyncPanelStyle()
     local db = QCT.db
     -- 行内面板始终按普通深度渲染
@@ -608,6 +735,11 @@ function T:Build(questId)
     -- 抬头：等级/难度着色 + 当前状态
     section("标题", function()
         addDouble(QuestTitle(questId), StateText(questId))
+        local label = self:CycleLabel()
+        if label then
+            addLine(F.DIM .. "  " .. L.F("同一点位 %s 个任务（详情窗里可切换）", tostring(#self.cycleList))
+                .. "（" .. label .. "）|r", 1, 1, 1)
+        end
     end)
 
     -- 接取 / 交付：一眼看出要去找谁，比把这段塞进描述里清楚得多
@@ -633,6 +765,38 @@ function T:Build(questId)
     end)
 
     local hasContent = false
+
+    -- 同一点位的其他任务：并列列出来（每条给名字 + 一句后续/前置）
+    section("同点位其他任务", function()
+        local extras = self.extraQuests
+        if type(extras) ~= "table" or #extras == 0 then return end
+
+        for _, otherId in ipairs(extras) do
+            addDouble("  " .. F.DIM .. "·|r " .. QuestTitle(otherId), StateText(otherId))
+
+            local nextChain = D:BuildChain(otherId, 2)
+            if #nextChain > 0 then
+                local names = {}
+                for index, id in ipairs(nextChain) do
+                    if index > 2 then break end
+                    names[#names + 1] = QuestTitle(id)
+                end
+                addLine("      " .. F.DIM .. "→|r " .. table.concat(names, F.DIM .. "、|r "), 1, 1, 1)
+            end
+
+            local prereqs = D:BuildPrerequisiteChain(otherId, 1)
+            if #prereqs > 0 then
+                local names = {}
+                for index, id in ipairs(prereqs) do
+                    if index > 2 then break end
+                    names[#names + 1] = QuestTitle(id)
+                end
+                addLine("      " .. F.DIM .. "←|r " .. table.concat(names, F.DIM .. "、|r "), 1, 1, 1)
+            end
+        end
+        hasContent = true
+    end)
+
 
     -- 任务描述
     section("描述", function()
@@ -740,12 +904,17 @@ function T:Build(questId)
         return
     end
 
-    self:Layout(content)
-    self:PlacePanel()
+    self:Layout(content, panel)
+    if panel == self.panel then
+        self:PlacePanel()
+    end
     panel:Show()
 
-    self.builtQuestId = questId
-    self.builtShift = shift
+    -- 副面板不要把「已画好的任务」抢过去，否则主面板的缓存判断会失效
+    if panel == self.panel then
+        self.builtQuestId = questId
+        self.builtShift = shift
+    end
 
     QCT.Log:Add("panel", "构建完成 | 任务:", questId, "| Shift:", shift and "是" or "否",
         "| 行数:", #content, "| 尺寸:", tostring(panel:GetWidth()) .. "x" .. tostring(panel:GetHeight()),
@@ -1946,6 +2115,19 @@ function T:Refresh(force)
         return
     end
 
+    -- 接管中的图标：Questie 又把提示框弹起来了（它自己会重画）。
+    -- 这里**立刻安静收掉并直接返回**，不要再走下面的面板重建 ——
+    -- 否则就是 显示 → 重建 → 收掉 → 再显示 的循环，看着就是"不停闪"。
+    if owner and QCT.db and QCT.db.hideQuestieTip ~= false
+        and self.mapHoverOwner and QuestieIconKind(owner) == "map" then
+        if type(tip.IsShown) == "function" and tip:IsShown() then
+            self.suppressTipHide = true
+            pcall(tip.Hide, tip)
+            self.suppressTipHide = false
+        end
+        return
+    end
+
     local state = self.state
     if not state or state.tip ~= tip or not tip:IsShown() then
         self:Hide()
@@ -2125,7 +2307,23 @@ function T:OpenChainWindow(questId)
         QCT:Print(L["没有可显示的任务：先把鼠标移到任务上，或先打开任务日志。"])
         return
     end
-    local ok, err = pcall(QCT.Window.Open, QCT.Window, questId)
+    -- 同一点位有多个任务时，把轮换列表传给详情窗（标题下面会出现页签）
+    local tabList
+    local cycle = self.cycleList
+    if type(cycle) == "table" and #cycle > 1 then
+        tabList = cycle
+    else
+        -- 面板刚被 Hide 过，列表可能已经清掉；用「同点位其他任务」现拼一份
+        local extras = self.extraQuests
+        if type(extras) == "table" and #extras > 0 then
+            tabList = { questId }
+            for _, otherId in ipairs(extras) do
+                if otherId ~= questId and #tabList < 4 then tabList[#tabList + 1] = otherId end
+            end
+        end
+    end
+
+    local ok, err = pcall(QCT.Window.Open, QCT.Window, questId, tabList)
     if not ok then QCT:Trace("window", "打开详情窗失败:", tostring(err)) end
 end
 
@@ -2353,9 +2551,47 @@ function T:OnModifierChanged(viaKey, down)
             return
         end
 
+        -- 任务列表（含地图右边那个任务列表）交给 Alt：Shift 在这里不弹。
+        -- 分工：地图画布上的图标 = Shift（松开）；任务列表行 = Alt。
+        if MouseOverQuestLog() then
+            QCT.Log:Add("key", "松开 Shift：光标在任务列表里，交给 Alt")
+            return
+        end
+
+        -- 更硬的一条：Shift 只对「我们还在接管的那个图标」生效。
+        -- 没有接管状态、又没有活的图标持有者 → 说明鼠标已经不在图标上了，直接不弹。
+        -- （1.5.52 之前这里还会去扫鼠标下的行，结果在任务列表里也弹）
+        local takeoverOk = false
+        if self.mapHoverOwner then
+            local left, bottom, width, height = FrameRect(self.mapHoverOwner)
+            local cx, cy
+            if T.CursorPos then cx, cy = T.CursorPos() end
+            if left and cx then
+                local px, py = left + width / 2, bottom + height / 2
+                local dx, dy = cx - px, cy - py
+                takeoverOk = (dx * dx + dy * dy) <= (160 * 160)
+            else
+                takeoverOk = true
+            end
+        end
+        if not takeoverOk then
+            local tipNow = _G.GameTooltip
+            local shownNow = tipNow ~= nil and type(tipNow.IsShown) == "function" and tipNow:IsShown()
+            local ownerNow = shownNow and CurrentOwner(tipNow) or nil
+            if not (ownerNow and IsMapQuestIcon(ownerNow)) then
+                QCT.Log:Add("key", "松开 Shift：不在图标上，不弹")
+                return
+            end
+        end
+
         -- 松开：现场看鼠标下是什么，再决定弹不弹
         local questId, source = self:QuestIdUnderMouse()
         local isLogRow = source ~= nil and source:find("日志", 1, true) ~= nil
+        if isLogRow then
+            -- 扫出来的就是任务日志行：同样交给 Alt
+            QCT.Log:Add("key", "松开 Shift：认出是任务列表行，交给 Alt")
+            return
+        end
 
         -- 不是日志行的一律按「地图图标」处理：要求地图真的开着，
         -- 否则按 M 关图之后再松开 Shift 又会凭空弹（1.5.10 修过的老问题）
@@ -2407,23 +2643,6 @@ function T:OnModifierChanged(viaKey, down)
         local currentOwner = tipShown and CurrentOwner(tip) or nil
         local onMapIcon = currentOwner ~= nil and IsMapQuestIcon(currentOwner)
 
-        -- 接管模式下提示框没显示、拿不到持有者：用接管中的图标顶上。
-        -- **必须要求世界地图开着** —— 否则在任务日志里按 Alt 会把上次地图上的图标
-        -- 当成目标，直接 return 掉，任务日志那条路就走不到了（1.5.45 的坑）。
-        if not onMapIcon and IsWorldMapOpen() and self.mapHoverOwner
-            and IsMapQuestIcon(self.mapHoverOwner) then
-            local okQid, qid = pcall(self.ResolveQuestIdFromOwner, self, self.mapHoverOwner)
-            if not okQid then qid = nil end
-            if qid then
-                if not (QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == qid) then
-                    self:Hide()
-                    self:OpenChainWindow(qid)
-                end
-                QCT.Log:Add("key", "Alt 开窗（接管中的图标） | 任务:", qid)
-                return
-            end
-        end
-
         if not onMapIcon then
             -- 0) 鼠标停在物品上：这件物品**能开启**哪个任务？
             --    背包/银行里的任务起始物品最常用。这一条要放在日志判断前面，
@@ -2456,6 +2675,25 @@ function T:OnModifierChanged(viaKey, down)
                     self:OpenChainWindow(questId)
                 end
                 QCT.Log:Add("questlog", "快捷键开窗 |", tostring(source), "| 任务:", questId)
+                return
+            end
+
+            -- 1c) 现场扫不到行：用**提示框标题**反查（任务列表行、自绘列表都靠这条）。
+            --     这条路不依赖帧名/矩形，只要提示框里写着任务名就能认出来。
+            --     地图图标有持有者（onMapIcon 判断已经挡掉了），所以不会在图标上误弹。
+            if not questId and tipShown and tip then
+                local okId, id = pcall(self.DetectQuestId, self, tip)
+                if okId and id then
+                    questId = id
+                    source = "提示框标题"
+                end
+            end
+            if questId then
+                if not (QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == questId) then
+                    self:Hide()
+                    self:OpenChainWindow(questId)
+                end
+                QCT.Log:Add("questlog", "标题反查开窗 |", tostring(source), "| 任务:", questId)
                 return
             end
 
@@ -2551,6 +2789,20 @@ function T:Enable()
     end)
 
 
+    -- Tab 切换按钮：面板显示「同一点位有多个任务」时把 TAB 暂时绑到它上面，
+    -- 面板收起立刻把 TAB 还回去（Tab 原本是选最近敌人）
+    TryInstall("Tab 切换按钮", function()
+        local button = _G[TAB_BUTTON]
+        if not button then
+            button = CreateFrame("Button", TAB_BUTTON, UIParent)
+            button:Hide()
+            button:SetScript("OnClick", function()
+                local okCycle, cycled = pcall(T.CycleQuest, T)
+                if not okCycle or not cycled then return end
+            end)
+        end
+    end)
+
     -- 在 Questie 画地图图标提示框之前拦下来：能接管就我们画，它一个像素都不显示，
     -- 不会再出现「先闪一下 Questie 的框、再被我们收掉」
     TryInstall("Questie 地图提示框接管", function()
@@ -2569,9 +2821,48 @@ function T:Enable()
 
         local original = mod.ShowOnTooltip
         mod.ShowOnTooltip = function(self, tooltip, owner, icons)
-            local okHook, handled = pcall(T.TryTakeOverIconTooltip, T, self, tooltip, owner)
-            if okHook and handled then return true end
-            return original(self, tooltip, owner, icons)
+            -- 已经把这个图标的这条链画在屏幕上了：Questie 再怎么喊都不用重画。
+            -- 注意必须比对「这次要画的图标」，否则换图标时会被这条提前挡掉。
+            local iconNow = owner or self
+            local ready = T.extrasCache
+            if ready and ready.icon and iconNow == ready.icon
+                and T.mapHoverOwner == ready.icon
+                and T.builtQuestId == ready.questId
+                and T.panel and T.panel:IsShown() then
+                return true
+            end
+
+            local okHook, handled, questId = pcall(T.TryTakeOverIconTooltip, T, self, tooltip, owner)
+            if not (okHook and handled) then
+                return original(self, tooltip, owner, icons)
+            end
+
+            -- 同一个图标、同一个任务：上次已经从聚合表里读过其他任务了，
+            -- 这次直接返回，Questie 的提示框连画都不用画（否则就是不停闪）
+            local cache = T.extrasCache
+            if cache and cache.questId == questId and cache.icon == T.mapHoverOwner then
+                return true
+            end
+
+            -- 让 Questie 照着画一遍：它会顺手把「同一 NPC 的任务聚合表」挂到提示框上。
+            -- 然后同一帧里立刻收掉（还没渲染出去，看不到闪），再从表里取其他任务。
+            local oki = pcall(original, self, tooltip, owner, icons)
+            if oki and tooltip then
+                local npcName
+                local dataOk, iconData = pcall(function() return iconNow and iconNow.data end)
+                if dataOk and type(iconData) == "table" and type(iconData.Name) == "string" then
+                    npcName = iconData.Name
+                end
+                local okx, extras = pcall(T.ExtrasFromTooltip, T, tooltip, questId, npcName)
+                if okx and type(extras) == "table" then
+                    T.extrasCache = { icon = T.mapHoverOwner, questId = questId, extras = extras }
+                    if #extras > 0 then pcall(T.ApplyExtras, T, questId, extras) end
+                end
+                T.suppressTipHide = true
+                pcall(tooltip.Hide, tooltip)
+                T.suppressTipHide = false
+            end
+            return true
         end
         QCT.Log:Add("map", "已挂上 MapIconTooltip.ShowOnTooltip 接管钩子")
     end)
@@ -2648,6 +2939,27 @@ function T:Enable()
                 if QCT.Window and QCT.Window:IsShown() then
                     pcall(QCT.Window.Close, QCT.Window)
                 end
+
+                -- 关图瞬间 Questie 的提示框还挂在屏幕上（它的图标一隐藏，OnLeave 不一定触发），
+                -- 玩家按一次 M 就会看到"任务框又出来了"。这里连它一起收掉。
+                local closingTip = _G.GameTooltip
+                if closingTip and type(closingTip.IsShown) == "function" and closingTip:IsShown() then
+                    local closingOwner = CurrentOwner(closingTip)
+                    if closingOwner and QuestieIconKind(closingOwner) == "map" then
+                        T.suppressTipHide = true
+                        pcall(closingTip.Hide, closingTip)
+                        T.suppressTipHide = false
+                    end
+                end
+
+                -- 接管状态、页签列表、悬停面板一起清干净
+                T.mapHoverOwner = nil
+                T.mapHoverCursor = nil
+                T.extrasCache = nil
+                T.cycleList = nil
+                T.cycleIndex = nil
+                T:Hide()
+
                 QCT.Log:Add("map", "世界地图已关闭，清空悬停缓存并收起详情窗")
             end
             lastMapOpen = mapOpen
@@ -2712,6 +3024,35 @@ function T:Enable()
                 end
             end
 
+            -- 兜底：面板还显示着、但已经不在原来那个图标上了 → 收掉。
+            --
+            -- 只认两种「确定离开了」的情况，避免悬停时被误收（1.5.52 的不稳定）：
+            --   1) 当前悬停的持有者存在、但不是地图图标（换到别的界面了）
+            --   2) 光标离"画面板时那个位置"超过 220 像素（真挪走了）
+            if T.panel and T.panel:IsShown() and not T.mapHoverOwner
+                and (not QCT.db or QCT.db.panelMode ~= "all") then
+                local gtip2 = _G.GameTooltip
+                local gShown2 = gtip2 ~= nil and type(gtip2.IsShown) == "function" and gtip2:IsShown()
+                local hover2 = gShown2 and CurrentOwner(gtip2) or nil
+
+                local elsewhere = false
+                if hover2 and QuestieIconKind(hover2) ~= "map" then
+                    elsewhere = true
+                elseif T.CursorPos and T.panelAtCursor then
+                    local cx2, cy2 = T.CursorPos()
+                    if cx2 then
+                        local dx2 = cx2 - T.panelAtCursor.x
+                        local dy2 = cy2 - T.panelAtCursor.y
+                        elsewhere = (dx2 * dx2 + dy2 * dy2) > (220 * 220)
+                    end
+                end
+
+                if elsewhere then
+                    T.panelAtCursor = nil
+                    T:Hide()
+                end
+            end
+
             -- 光标离开图标（或地图关了）就把面板收起来。
             --
             -- 1.5.37/38 用「光标在不在图标矩形里」判断，结果这个客户端上矩形不可靠，
@@ -2724,21 +3065,30 @@ function T:Enable()
                 local leave = false
                 if not mapOpen then
                     leave = true
+                elseif MouseOverQuestLog() then
+                    -- 光标进了任务列表（含地图右边那个列表）：立刻交出去。
+                    -- 玩家实测：从问号图标挪到右边的列表，列表跟图标挨得近、
+                    -- 距离判据还在 180px 内，于是旧图标的面板被"缓存"着一直跟着鼠标。
+                    leave = true
                 elseif cx and T.mapHoverCursor then
-                    -- 180px：Questie 图标手柄很大（矩形 17x17、光标常在 60~80px 外），
-                    -- 阈值太小会让面板一抖就消失
+                    -- 140px：Questie 图标手柄很大（矩形 17x17、光标常在 60~80px 外），
+                    -- 但太宽会把「隔壁列表」也算成还在图标上
                     local dx, dy = cx - T.mapHoverCursor.x, cy - T.mapHoverCursor.y
-                    leave = (dx * dx + dy * dy) > (180 * 180)
+                    leave = (dx * dx + dy * dy) > (140 * 140)
                 end
 
                 if leave then
                     local owner = T.mapHoverOwner
                     T.mapHoverOwner = nil
                     T.mapHoverCursor = nil
+                    T.extrasCache = nil
+                    T.cycleList = nil
+                    T.cycleIndex = nil
                     T:Hide()
 
-                    -- 光标还在这个图标附近：把 Questie 的提示框重新弹一次
-                    if owner and cx and cy then
+                    -- 光标还在这个图标附近（且没进任务列表）：把 Questie 的提示框重新弹一次。
+                    -- 如果光标已经跑到列表里，就不要再把旧图标的提示框叫回来。
+                    if owner and cx and cy and not MouseOverQuestLog() then
                         local left, bottom, width, height = FrameRect(owner)
                         local near = true
                         if left then
@@ -2941,6 +3291,71 @@ function T:DiagnoseQuestLog()
         .. QuestLogKeyLabel() .. "，应能打开详情窗。")
 end
 
+---Questie 自己的聚合数据：一个 NPC 图标上挂的所有任务（`npcAndObjectOrder`）。
+---这是最准的一条：NPC 只有**一个**图标，但身上可能有两三个任务，
+---`_Rebuild` 里就是遍历这张表把任务全列出来的。
+---@param iconData table? MapIconTooltip 那边传进来的对象
+---@param excludeId number? 已经显示的那个
+---@return number[] ids
+local function QuestIdsFromQuestieOrder(iconData, excludeId)
+    local order = iconData and iconData.npcAndObjectOrder
+    if type(order) ~= "table" then return {} end
+
+    local out = {}
+    local seen = { [excludeId] = true }
+    for _, list in pairs(order) do
+        if type(list) == "table" then
+            for _, questData in pairs(list) do
+                if type(questData) == "table" then
+                    local questId = SafeNumber(questData, "questId") or SafeNumber(questData, "Id")
+                    if questId and not seen[questId] then
+                        seen[questId] = true
+                        out[#out + 1] = questId
+                        if #out >= 3 then return out end
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
+---同一个点上压着的其他任务（问号/感叹号上挂了多个任务时，Questie 是叠了几个图标）。
+---@param frame table? 当前图标
+---@param excludeId number? 已经显示的那个任务
+---@return number[] ids
+local function SiblingQuestIds(frame, excludeId)
+    local parent = frame and frame.GetParent and frame:GetParent() or nil
+    if not parent or type(parent.GetChildren) ~= "function" then return {} end
+
+    local left, bottom, width, height = FrameRect(frame)
+    if not left then return {} end
+    local cx, cy = left + width / 2, bottom + height / 2
+
+    local out, seen = {}, {}
+    local ok, children = pcall(parent.GetChildren, parent)
+    if not ok or type(children) ~= "table" then return {} end
+
+    for _, child in ipairs(children) do
+        if child ~= frame then
+            local l2, b2, w2, h2 = FrameRect(child)
+            if l2 then
+                local dx = math.abs((l2 + w2 / 2) - cx)
+                local dy = math.abs((b2 + h2 / 2) - cy)
+                if dx <= 10 and dy <= 10 then
+                    local questId = T:ResolveQuestIdFromOwner(child)
+                    if questId and questId ~= excludeId and not seen[questId] then
+                        seen[questId] = true
+                        out[#out + 1] = questId
+                        if #out >= 3 then break end
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
 ---接管 Questie 的地图图标提示框：**在它画之前**拦下来，避免"一闪而过"。
 ---
 ---Questie 的 `MapIconTooltip.ShowOnTooltip(self, tooltip, owner, icons)` 是纯 Lua 函数，
@@ -2969,6 +3384,26 @@ function T:TryTakeOverIconTooltip(iconData, tooltip, owner)
         return true
     end
 
+    -- 已经画好这个图标的这条任务了：什么都不用重做（Questie 悬停期间会反复喊）
+    do
+        local already = self.extrasCache
+        if already and already.icon == icon and already.questId == questId
+            and self.builtQuestId == questId
+            and self.panel and self.panel:IsShown() then
+            self.mapHoverOwner = icon
+            return true, questId, icon
+        end
+    end
+
+    -- 「同点位其他任务」：优先用上次从 Questie 提示框上读到的缓存（同一图标、同一任务）。
+    -- 缓存命中时连 Questie 的提示框都不用再画一遍 —— 稳态下零开销，也不会闪。
+    local cached = self.extrasCache
+    if cached and cached.icon == icon and cached.questId == questId then
+        self.extraQuests = cached.extras
+    else
+        self.extraQuests = SiblingQuestIds(icon, questId)
+    end
+
     self:Update(questId)
     if not (self.panel and self.panel:IsShown()) then
         -- 我们画不出来：让 Questie 照常画
@@ -2982,7 +3417,60 @@ function T:TryTakeOverIconTooltip(iconData, tooltip, owner)
         self.mapHoverCursor = cx and { x = cx, y = cy } or nil
     end
     QCT.Log:Add("map", "拦下 Questie 的提示框 | 任务:", questId, "| 图标:", SafeName(icon) or "?")
-    return true
+    return true, questId, icon
+end
+
+---从 Questie 填好的提示框上取「同一个 NPC/点位的其他任务」。
+---Questie 在 `ShowOnTooltip` 里把聚合结果挂在**提示框对象**上：
+---`tooltip.npcAndObjectOrder[name][title] = { questId = ..., title = ... }`
+---（所以直接问图标是拿不到的，这是我们之前一直取空的原因）
+---@param tooltip table? GameTooltip
+---@param excludeId number?
+---@param npcName string? 只取这个 NPC 名下的任务（否则会把附近图标的任务也算进来）
+---@return number[] ids
+function T:ExtrasFromTooltip(tooltip, excludeId, npcName)
+    local order = tooltip and tooltip.npcAndObjectOrder
+    if type(order) ~= "table" then return {} end
+
+    -- Questie 是按「图标簇」聚合的：表里除了当前 NPC，还混着**附近**其他 NPC 的任务。
+    -- 玩家实测：科博克只有 [36][42]，面板却列出 [45][41][37] —— 全是隔壁图标的。
+    -- 所以有 NPC 名时必须只取它名下那一组。
+    local groups = order
+    if type(npcName) == "string" and npcName ~= "" and type(order[npcName]) == "table" then
+        groups = { [npcName] = order[npcName] }
+    end
+
+    local out, seen = {}, { [excludeId] = true }
+    for _, list in pairs(groups) do
+        if type(list) == "table" then
+            for title, tip in pairs(list) do
+                local questId = type(tip) == "table" and (SafeNumber(tip, "questId") or SafeNumber(tip, "Id")) or nil
+                if not questId and type(title) == "string" then
+                    local okId, id = pcall(D.FindQuestIdByTitle, D, title)
+                    if okId then questId = id end
+                end
+                if questId and not seen[questId] then
+                    seen[questId] = true
+                    out[#out + 1] = questId
+                    if #out >= 3 then return out end
+                end
+            end
+        end
+    end
+    return out
+end
+
+---把「同点位的其他任务」补进已经画好的面板
+function T:ApplyExtras(questId, extras)
+    if type(extras) ~= "table" or #extras == 0 then return end
+    self.extraQuests = extras
+    -- 先建好「Tab 轮换」列表，再重建面板：否则这一帧的提示行读不到列表
+    self:SetCycleList(questId, extras)
+    if self.builtQuestId == questId and self.panel and self.panel:IsShown() then
+        self.suppressTabRebuild = true
+        pcall(self.Update, self, questId)
+        self.suppressTabRebuild = nil
+    end
 end
 
 ---`/qct map` 用：排查「地图图标上为什么没画面板」。

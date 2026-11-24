@@ -162,7 +162,10 @@ function W:Create()
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStart", function(self)
+        W.userMoved = true
+        self:StartMoving()
+    end)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     MakeBackdrop(frame)
     frame:Hide()
@@ -229,6 +232,7 @@ function W:Create()
     divider:SetHeight(1)
     divider:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(TITLE_HEIGHT + 4))
     divider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -(TITLE_HEIGHT + 4))
+    self.divider = divider
 
     -- 滚动区
     local scroll = CreateFrame("ScrollFrame", WINDOW_NAME .. "Scroll", frame)
@@ -742,7 +746,159 @@ function W:UpdateScrollbar()
     self.thumb:SetPoint("TOPLEFT", self.track, "TOPLEFT", 0, -offset)
 end
 
-function W:Open(questId)
+---按「哪里有空」摆窗口：优先光标右侧，右边放不下就翻到左边，上下贴边自动收回来。
+---
+---以前固定 CENTER（拖过之后一直停在原地），玩家反馈"永远从右下角冒出来"，
+---在任务日志/地图边上把要看的任务挡得严严实实。
+function W:PlaceWindow()
+    local frame = self.frame
+    if not frame then return end
+    if self.userMoved then return end     -- 玩家自己拖过，就尊重他的位置
+
+    local screenWidth = UIParent:GetWidth() or 1920
+    local screenHeight = UIParent:GetHeight() or 1080
+    local frameWidth = frame:GetWidth() or 0
+    local frameHeight = frame:GetHeight() or 0
+    -- 刚 /reload 后第一次开窗，尺寸可能还是 0（还没真正排版完），用配置值兜底
+    if frameWidth <= 0 then frameWidth = width or 480 end
+    if frameHeight <= 0 then frameHeight = HEIGHT or 500 end
+
+    -- 屏幕居中（水平、垂直都居中）。玩家反馈：贴在光标旁会被挤到边上/偏上，
+    -- 居中看着最稳，也不会一半在屏幕外。
+    local x = (screenWidth - frameWidth) / 2
+    local y = (screenHeight + frameHeight) / 2
+    if y - frameHeight < 12 then y = 12 + frameHeight end
+    if y > screenHeight - 12 then y = screenHeight - 12 end
+
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+    QCT.Log:Add("window", "摆放窗口（屏幕居中）:", string.format("%.0f,%.0f", x, y))
+end
+
+---Tab 页签：同一点位有多个任务时，在标题下方排一行，点一下就切过去
+---@param index number
+function W:CreateTab(index)
+    local frame = self.frame
+    local path, size, flags = GetFont()
+
+    local tab = CreateFrame("Button", nil, frame)
+    tab:SetSize(80, 18)
+
+    local label = tab:CreateFontString(nil, "OVERLAY")
+    label:SetFont(path, size - 1, flags)
+    label:SetPoint("CENTER")
+    label:SetJustifyH("CENTER")
+
+    -- 当前页签下面画一条亮线，其它页签只有文字（不再用底色方块，看着不丑）
+    local underline = tab:CreateTexture(nil, "ARTWORK")
+    underline:SetTexture("Interface\\Buttons\\WHITE8X8")
+    underline:SetHeight(2)
+    underline:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, -2)
+    underline:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, -2)
+    underline:SetVertexColor(1, 0.82, 0.2, 1)
+    underline:Hide()
+
+    tab.label = label
+    tab.underline = underline
+    return tab
+end
+
+---有页签时，把标题/分隔线/滚动区整体下移一点
+function W:ShiftContent(hasTabs)
+    if self.contentShifted == hasTabs then return end
+    self.contentShifted = hasTabs
+
+    local rows = self.tabRows or 1
+    local offset = hasTabs and (14 + rows * 22) or 0
+    if self.title then
+        self.title:ClearAllPoints()
+        self.title:SetPoint("TOPLEFT", self.frame, "TOPLEFT", PAD, -10 - offset)
+    end
+    if self.divider then
+        self.divider:ClearAllPoints()
+        self.divider:SetPoint("TOPLEFT", self.frame, "TOPLEFT", PAD, -(TITLE_HEIGHT + 4 + offset))
+        self.divider:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -PAD, -(TITLE_HEIGHT + 4 + offset))
+    end
+    if self.scroll then
+        self.scroll:ClearAllPoints()
+        self.scroll:SetPoint("TOPLEFT", self.frame, "TOPLEFT", PAD, -(TITLE_HEIGHT + 12 + offset))
+        self.scroll:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -(PAD + SCROLLBAR_WIDTH + 6), PAD)
+    end
+end
+
+---设置页签列表（list[1] 是当前打开的）
+function W:SetTabs(list, activeId)
+    local frame = self.frame
+    if not frame then return end
+    self.tabList = list
+    self.tabButtons = self.tabButtons or {}
+
+    local count = type(list) == "table" and #list or 0
+    if count < 2 then
+        for _, button in ipairs(self.tabButtons) do button:Hide() end
+        self:ShiftContent(false)
+        return
+    end
+
+    local shown = math.min(count, 4)
+    local frameWidth = frame:GetWidth() or width or 480
+    local maxX = frameWidth - PAD
+    local cursorX, cursorY = PAD, -9
+    local rows = 1
+
+    for index = 1, shown do
+        local button = self.tabButtons[index] or self:CreateTab(index)
+        self.tabButtons[index] = button
+
+        local questId = list[index]
+        local name = D:GetName(questId) or ("#" .. tostring(questId))
+        button.label:SetText(name)
+
+        -- 完整显示名字：宽度 = 文字宽度 + 内边距，不截断
+        local textWidth = button.label:GetStringWidth() or 0
+        local tabWidth = math.max(48, textWidth + 20)
+        button:SetSize(tabWidth, 18)
+        button.underline:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, -2)
+        button.underline:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, -2)
+
+        -- 一行放不下就换行
+        if cursorX + tabWidth > maxX and cursorX > PAD then
+            cursorX = PAD
+            cursorY = cursorY - 22
+            rows = rows + 1
+        end
+
+        local active = (questId == activeId)
+        button.label:SetTextColor(active and 1 or 0.72, active and 0.85 or 0.72, active and 0.3 or 0.72)
+        if active then button.underline:Show() else button.underline:Hide() end
+
+        button:ClearAllPoints()
+        button:SetPoint("TOPLEFT", frame, "TOPLEFT", cursorX, cursorY)
+        cursorX = cursorX + tabWidth + 10
+
+        button:SetScript("OnClick", function()
+            if questId ~= activeId then
+                W:Open(questId, list)
+            end
+        end)
+        button:SetScript("OnEnter", function()
+            if questId ~= activeId then button.label:SetTextColor(1, 1, 1) end
+        end)
+        button:SetScript("OnLeave", function()
+            if questId ~= activeId then button.label:SetTextColor(0.72, 0.72, 0.72) end
+        end)
+        button:Show()
+    end
+
+    for index = shown + 1, #self.tabButtons do
+        self.tabButtons[index]:Hide()
+    end
+
+    self.tabRows = rows
+    self:ShiftContent(true)
+end
+
+function W:Open(questId, tabList)
     if not questId then return end
     if not QCT.db.enabled then return end
 
@@ -766,6 +922,14 @@ function W:Open(questId)
     end
 
     self.frame:Show()
+    pcall(self.SetTabs, self, tabList, questId)
+    pcall(self.PlaceWindow, self)
+    -- 排版要一帧才稳定，所以下一帧再按真实尺寸摆一次（否则首次开窗会偏）
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if W.frame and W.frame:IsShown() then pcall(W.PlaceWindow, W) end
+        end)
+    end
 
     -- 详情窗已经把同样的内容展开得更全了，行内面板就收起来，避免两份信息互相挡
     if QCT.Tooltip and QCT.Tooltip.Hide then

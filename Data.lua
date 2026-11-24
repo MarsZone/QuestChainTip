@@ -1221,24 +1221,68 @@ end
 
 ---@param questId number
 ---@param depth number
+---这个任务的**所有**后续（QuestieDB 里一个任务可能有多个分支，不止一条线）。
+---@param questId number?
+---@return number[] ids
+function D:GetChildren(questId)
+    local out, seen = {}, {}
+    if not questId then return out end
+
+    local function add(id)
+        id = tonumber(id)
+        if id and id > 0 and not seen[id] then
+            seen[id] = true
+            out[#out + 1] = id
+        end
+    end
+
+    local quest = self:GetQuest(questId)
+    if quest then
+        -- Questie 的数据里可能带整组 children（一个任务分出两条支线）
+        for _, key in ipairs({ "childQuests", "children" }) do
+            local list = quest[key]
+            if type(list) == "table" then
+                for _, id in ipairs(list) do add(id) end
+            end
+        end
+        add(quest.nextQuestInChain)
+    end
+    return out
+end
+
 ---@return number[] chain, boolean truncated
 function D:BuildChain(questId, depth)
     local chain, seen = {}, { [questId] = true }
-    local current = self:GetNext(questId)
-    local guard = 0
     local hidden = mod.QuestieCorrections and mod.QuestieCorrections.hiddenQuests
 
-    while current and current > 0 and not seen[current] and #chain < depth and guard < 40 do
+    -- 广度优先：一个任务可能分出**多条支线**（1.5.62 之前只跟着 nextQuestInChain 走一条，
+    -- 玩家实测两个后续只显示一个）。这里把所有 children 都排进来，按层展开。
+    local queue = { questId }
+    local head = 1
+    local guard = 0
+
+    while head <= #queue and #chain < depth and guard < 60 do
+        local current = queue[head]
+        head = head + 1
         guard = guard + 1
-        seen[current] = true
-        -- 被 Questie 隐藏的（节日/占位/无效）任务直接跳过，但仍继续往后走
-        if not (hidden and hidden[current]) then
-            chain[#chain + 1] = current
+
+        for _, child in ipairs(self:GetChildren(current)) do
+            if not seen[child] then
+                seen[child] = true
+                -- 被 Questie 隐藏的（节日/占位/无效）任务跳过，但它的子任务照旧要展开
+                if not (hidden and hidden[child]) then
+                    chain[#chain + 1] = child
+                end
+                queue[#queue + 1] = child
+                if #chain >= depth then break end
+            end
         end
-        current = self:GetNext(current)
     end
 
-    local truncated = current ~= nil and current > 0 and not seen[current] and #chain >= depth
+    local truncated = false
+    for index = head, #queue do
+        if #chain >= depth then truncated = true break end
+    end
     return chain, truncated
 end
 
