@@ -1960,14 +1960,16 @@ function T:Refresh(force)
     -- 光标已经离开这个图标时不要再画面板：
     -- 玩家反馈「鼠标在这儿，面板却在那边冒出来」——Questie 的提示框收得比鼠标慢半拍，
     -- 这半拍里 owner 还是旧图标。用矩形包含判断，不依赖 IsMouseOver（这客户端不可靠）。
+    -- 判据从「光标必须在图标矩形里」改成「离图标中心不超过 120 像素」：
+    -- 玩家实测（/qct map）图标矩形只有 17x17，但提示框还显示着时光标可能在 60~80 像素外
+    -- （Questie 图标的可点区域比这个矩形大）。原来那版一率判「已离开」，面板永远不出现。
     if owner and T.CursorPos then
         local left, bottom, width, height = FrameRect(owner)
         local cx, cy = T.CursorPos()
         if left and cx then
-            local margin = 12
-            local inside = cx >= left - margin and cx <= left + width + margin
-                and cy >= bottom - margin and cy <= bottom + height + margin
-            if not inside then
+            local px, py = left + width / 2, bottom + height / 2
+            local dx, dy = cx - px, cy - py
+            if (dx * dx + dy * dy) > (120 * 120) then
                 self:Hide()
                 return
             end
