@@ -2407,9 +2407,13 @@ function T:OnModifierChanged(viaKey, down)
         local currentOwner = tipShown and CurrentOwner(tip) or nil
         local onMapIcon = currentOwner ~= nil and IsMapQuestIcon(currentOwner)
 
-        -- 接管模式下提示框没显示、拿不到持有者：用接管中的图标顶上
-        if not onMapIcon and self.mapHoverOwner and IsMapQuestIcon(self.mapHoverOwner) then
-            local qid = self:ResolveQuestIdFromOwner(self.mapHoverOwner)
+        -- 接管模式下提示框没显示、拿不到持有者：用接管中的图标顶上。
+        -- **必须要求世界地图开着** —— 否则在任务日志里按 Alt 会把上次地图上的图标
+        -- 当成目标，直接 return 掉，任务日志那条路就走不到了（1.5.45 的坑）。
+        if not onMapIcon and IsWorldMapOpen() and self.mapHoverOwner
+            and IsMapQuestIcon(self.mapHoverOwner) then
+            local okQid, qid = pcall(self.ResolveQuestIdFromOwner, self, self.mapHoverOwner)
+            if not okQid then qid = nil end
             if qid then
                 if not (QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == qid) then
                     self:Hide()
