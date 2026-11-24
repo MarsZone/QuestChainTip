@@ -1126,9 +1126,6 @@ function D:RefreshQuestLog()
 end
 
 ---这件物品**能开启**哪个任务（QuestieDB 物品表的 startQuest 字段）。
----
----用途：背包/银行里的「任务起始物品」——鼠标停上去按 Alt 就能看它开启的整条链。
----QuestieDB 是独立插件，可能没装，也可能晚加载，所以每次现查、拿不到就返回 nil。
 ---@param itemId number?
 ---@return number? questId
 function D:GetQuestStartedByItem(itemId)
@@ -1138,6 +1135,74 @@ function D:GetQuestStartedByItem(itemId)
     local ok, questId = pcall(entity.startQuest, itemId)
     if ok and type(questId) == "number" and questId > 0 then return questId end
     return nil
+end
+
+---在玩家任务日志里找「目标文本里提到这个物品名」的任务。
+---
+---为什么要这条：本服有大量自定义物品（物品 ID 都是 27 万这种），
+---QuestieDB 是原版数据，对它们没有 startQuest 记录 —— 玩家实测
+---「注入巫毒的神器」就是这种情况（物品认出来了，但查不到任务）。
+---日志里的任务目标文本是客户端给的，自定义任务也照样有，按物品名匹配最实际。
+---@param itemName string?
+---@return number? questId
+function D:FindLogQuestByItemName(itemName)
+    if type(itemName) ~= "string" or itemName == "" then return nil end
+    if not self.logById then self:RefreshQuestLog() end
+
+    for questId in pairs(self.logById or {}) do
+        local quest = self:GetQuest(questId)
+        if quest then
+            for _, text in ipairs({ quest.objectivesText, quest.Description }) do
+                -- 有的数据源给的是多行表，先拼起来再找
+                if type(text) == "table" then
+                    local okJoin, joined = pcall(table.concat, text, "\n")
+                    if okJoin then text = joined end
+                end
+                if type(text) == "string" and text ~= "" then
+                    local ok, found = pcall(string.find, text, itemName, 1, true)
+                    if ok and found then return questId end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+---这件物品对应哪个任务。三条路，从准到宽：
+---  1) QuestieDB 的 startQuest（标准物品，最准）
+---  2) QuestieDB 的 relatedQuests（相关任务，退一步）
+---  3) 任务日志里目标文本提到这件物品名（自定义物品只能走这条）
+---@param itemId number?
+---@param itemName string? 提示框里拿到的物品名，没有就用 DB 里的
+---@return number? questId, string? source
+function D:GetQuestForItem(itemId, itemName)
+    if type(itemId) ~= "number" or itemId <= 0 then return nil, nil end
+
+    local entity = itemEntity()
+    if entity then
+        if type(entity.startQuest) == "function" then
+            local ok, questId = pcall(entity.startQuest, itemId)
+            if ok and type(questId) == "number" and questId > 0 then
+                return questId, "QuestieDB startQuest"
+            end
+        end
+        if type(entity.relatedQuests) == "function" then
+            local ok, list = pcall(entity.relatedQuests, itemId)
+            if ok and type(list) == "table" and list[1] then
+                local questId = tonumber(list[1])
+                if questId and questId > 0 then return questId, "QuestieDB relatedQuests" end
+            end
+        end
+    end
+
+    if not itemName and entity and type(entity.name) == "function" then
+        local ok, name = pcall(entity.name, itemId)
+        if ok and type(name) == "string" then itemName = name end
+    end
+    local questId = self:FindLogQuestByItemName(itemName)
+    if questId then return questId, "任务日志目标文本" end
+
+    return nil, nil
 end
 
 ---按工具提示标题找任务（只匹配任务日志里的任务，避免误伤物品/NPC 提示）

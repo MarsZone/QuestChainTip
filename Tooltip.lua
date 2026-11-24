@@ -1585,7 +1585,7 @@ end
 T.BagSlotUnderCursor = BagSlotUnderCursor
 
 ---鼠标下这件物品的链接。先问提示框（最通用），问不到再看是不是压在背包格子上。
----@return string? link, string? where
+---@return string? link, string? where, string? name
 local function ItemLinkUnderMouse()
     local tip = _G.GameTooltip
     if tip and type(tip.GetItem) == "function" then
@@ -1595,11 +1595,11 @@ local function ItemLinkUnderMouse()
             shown = okShown and value and true or false
         end
         if shown then
-            local ok, _, link = pcall(tip.GetItem, tip)
+            local ok, name, link = pcall(tip.GetItem, tip)
             -- 这个客户端的提示框文本可能是 secret value：能拿到字符串，但一读就抛错。
             -- 所以必须「能抠出物品 ID」才认，抠不出来就走背包接口那条路。
             if ok and type(link) == "string" and link ~= "" and ItemIdFromLink(link) then
-                return link, "提示框"
+                return link, "提示框", (type(name) == "string" and name ~= "") and name or nil
             end
         end
     end
@@ -1619,14 +1619,14 @@ T.ItemLinkUnderMouse = ItemLinkUnderMouse
 ---比去任务日志里翻半天好用。这里正式做进来。
 ---@return number? questId, number? itemId
 function T:ItemUnderMouseQuestId()
-    if not (D and D.GetQuestStartedByItem) then return nil, nil end
-    local link = ItemLinkUnderMouse()
+    if not (D and D.GetQuestForItem) then return nil, nil end
+    local link, _, name = ItemLinkUnderMouse()
     local itemId = ItemIdFromLink(link)
     if not itemId then return nil, nil end
 
-    local questId = D:GetQuestStartedByItem(itemId)
-    if questId then return questId, itemId end
-    return nil, nil
+    local questId, source = D:GetQuestForItem(itemId, name)
+    if questId then return questId, itemId, name, source end
+    return nil, itemId, name, nil
 end
 
 ---任务日志里按 Shift 时的提示：左键是 Questie 的隐藏任务，开窗用 Alt。
@@ -2726,8 +2726,40 @@ function T:DiagnoseItem()
     QCT:Print("LibQuestieDB:", libItem and "有" or "没有",
         "| Item.startQuest:", (libItem and type(libItem.startQuest) == "function") and "有" or "没有")
 
-    if itemId and D and D.GetQuestStartedByItem then
-        QCT:Print("  这件物品开启的任务:", tostring(D:GetQuestStartedByItem(itemId)))
+    if itemId then
+        local entityOk = false
+        local lib = _G.LibQuestieDB
+        local entity = (type(lib) == "table" and lib.Item) or _G.ItemDB
+        if entity then
+            entityOk = true
+            local nameOk, dbName = pcall(entity.name, itemId)
+            QCT:Print("  DB 里的物品名:", nameOk and tostring(dbName) or "查不到")
+            if type(entity.startQuest) == "function" then
+                local ok, value = pcall(entity.startQuest, itemId)
+                QCT:Print("  startQuest ->", ok and tostring(value) or "调用失败")
+            end
+            if type(entity.relatedQuests) == "function" then
+                local ok, list = pcall(entity.relatedQuests, itemId)
+                local text = "取不到"
+                if ok and type(list) == "table" then
+                    local parts = {}
+                    for index, questId in ipairs(list) do
+                        if index > 5 then break end
+                        parts[#parts + 1] = tostring(questId)
+                    end
+                    text = #parts > 0 and table.concat(parts, ",") or "空"
+                end
+                QCT:Print("  relatedQuests ->", text)
+            end
+        end
+        if not entityOk then
+            QCT:Print("  没有任何物品表（ItemDB / LibQuestieDB 都拿不到）")
+        end
+
+        if D and D.GetQuestForItem then
+            local questId, source = D:GetQuestForItem(itemId, nil)
+            QCT:Print("  最终定位任务:", tostring(questId), "| 来源:", tostring(source))
+        end
     end
     QCT:Print("测试方法：鼠标停在物品上（背包里的也行）敲这条命令，把上面几行发我。")
 end
