@@ -464,7 +464,11 @@ function T:Layout(content)
     panel:SetHeight(math.max(40, -y + PAD_Y + 3))
 end
 
----把面板放在 GameTooltip 旁边：优先下方，其次右侧、左侧，最后居中。
+---把面板放在**光标旁边**。
+---
+---以前是贴在 GameTooltip 下面：Questie 的地图提示框又高又长（一个 NPC 图标能列出十几条），
+---我们的面板就被顶到离鼠标好几百像素的地方，玩家看着像「点这儿、结果那边弹出来」。
+---现在直接跟着光标，右下角偏移一点，贴边就翻到另一侧。
 function T:PlacePanel()
     local panel = self.panel
     if not panel then return end
@@ -472,8 +476,27 @@ function T:PlacePanel()
     panel:ClearAllPoints()
 
     local screenWidth = UIParent:GetWidth() or 1920
+    local screenHeight = UIParent:GetHeight() or 1080
     local panelWidth = panel:GetWidth() or 0
     local panelHeight = panel:GetHeight() or 0
+
+    local cx, cy
+    if T.CursorPos then cx, cy = T.CursorPos() end
+    if cx then
+        local offset = 18
+        local x = cx + offset
+        local y = cy - offset
+
+        if x + panelWidth > screenWidth - 8 then x = cx - panelWidth - offset end
+        if y - panelHeight < 8 then y = cy + panelHeight + offset end
+        if x < 8 then x = 8 end
+        if y > screenHeight - 8 then y = screenHeight - 8 end
+
+        panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+        return
+    end
+
+    -- 拿不到光标（极少见）：退回贴着提示框
     local tipLeft = GameTooltip:GetLeft()
     local tipRight = GameTooltip:GetRight()
     local tipBottom = GameTooltip:GetBottom()
@@ -1341,6 +1364,7 @@ local function CursorFrames(maxCount)
     return frames
 end
 T.CursorFrames = CursorFrames
+T.CursorPos = CursorPos
 
 ---鼠标现在是不是压在任务日志里（含世界地图右边那个任务列表）。
 ---
@@ -1928,6 +1952,23 @@ function T:Refresh(force)
     -- 正好在那个瞬间按 Shift 就会被当成「没悬停任何东西」。这里留个兜底。
     self.owner = owner
     self.ownerTime = GetTime()
+
+    -- 光标已经离开这个图标时不要再画面板：
+    -- 玩家反馈「鼠标在这儿，面板却在那边冒出来」——Questie 的提示框收得比鼠标慢半拍，
+    -- 这半拍里 owner 还是旧图标。用矩形包含判断，不依赖 IsMouseOver（这客户端不可靠）。
+    if owner and T.CursorPos then
+        local left, bottom, width, height = FrameRect(owner)
+        local cx, cy = T.CursorPos()
+        if left and cx then
+            local margin = 12
+            local inside = cx >= left - margin and cx <= left + width + margin
+                and cy >= bottom - margin and cy <= bottom + height + margin
+            if not inside then
+                self:Hide()
+                return
+            end
+        end
+    end
 
     -- 先识别任务：面板关着也要识别，因为地图上「按住 Shift」要靠它
     if not state.questId then

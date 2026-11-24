@@ -40,7 +40,9 @@ local DEFAULTS = {
     chainRewards = true,    -- 后续任务每行也显示经验/金钱/状态
     showPrereq = true,      -- 是否显示前置任务
     panelMode = "map",      -- 悬停面板：off=关闭 / map=仅世界地图（默认） / all=全部位置
-    chainKey = "SHIFT",     -- 详情窗快捷键（世界地图）：SHIFT / CTRL / ALT / NONE / 任意键
+    -- 1.5.35：地图上也改成 Alt。Shift 会和 Questie 的「按住 Shift 看任务详情」直接打架 ——
+    -- 玩家一按 Shift，Questie 就把提示框展开成一大段描述/奖励/后续任务，满屏都是字。
+    chainKey = "ALT",       -- 详情窗快捷键（世界地图）：SHIFT / CTRL / ALT / NONE / 任意键
     questLogKey = "ALT",    -- 任务日志快捷键：ALT / CTRL / NONE（Shift 留给原生的链接到聊天框）
     panelWidth = 380,       -- 悬停面板文本列宽（像素，240~560）
     windowWidth = "AUTO",   -- 详情窗宽度："AUTO"（按屏幕）或 420~900 的像素值
@@ -155,6 +157,13 @@ function QCT:Start()
         self:Trace("start", "Questie 数据源暂未就绪，钩子已安装，稍后自动接上")
     end
 
+    -- 手势迁移提示（只出现一次）：Shift -> Alt
+    if self.db and self.db.gestureNotice then
+        self.db.gestureNotice = nil
+        self:Print("手势已改用 |cffffff00Alt|r：地图上按住 Alt 悬停任务图标，任务日志里按住 Alt 点任务行。")
+        self:Print("  Shift 交还给 Questie（它靠 Shift 展开提示框详情，和我们的键撞在一起会很乱）。要改回来：/qct key shift")
+    end
+
     -- 先把钩子装上：后面任何一步出错都不能让插件变成“完全不工作”
     self.Tooltip:Enable()
 
@@ -264,6 +273,19 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         -- 1.5.6：悬停面板的默认值从「关闭」改成「仅世界地图」。
         -- 老存档里存的是 "off"，光改 DEFAULTS 对老用户不生效，所以这里做一次迁移：
         -- 只迁移一次，之后玩家在设置里手动关掉就不会被改回来。
+        -- 1.5.35：手势从 Shift 改成 Alt。
+        -- 原因：Questie 靠「按住 Shift」展开地图提示框的详情，两边撞在同一次按键上，
+        -- 结果玩家想开我们的窗，屏幕上先糊出一大段 Questie 的详情。
+        -- 只迁移一次：之后玩家自己 /qct key shift 改回来就不会被覆盖。
+        if not QCT.db.gestureAltMigrated then
+            QCT.db.gestureAltMigrated = true
+            if QCT.db.chainKey == "SHIFT" then
+                QCT.db.chainKey = "ALT"
+                QCT.db.questLogKey = "ALT"
+                QCT.db.gestureNotice = true
+            end
+        end
+
         if not QCT.db.panelModeMigrated then
             QCT.db.panelModeMigrated = true
             if QCT.db.panelMode == "off" then
