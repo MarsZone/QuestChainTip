@@ -322,6 +322,7 @@ local function PrintHelp()
     QCT:Print(L["  |cffffff00/qct logkey <alt|ctrl|none>|r - 任务日志里开详情窗的键（默认 alt）"])
     QCT:Print("  |cffffff00按住 Shift 再松开|r - 悬停在任务上，松开 Shift 才弹窗（按下时不弹，留给 Questie 隐藏任务）")
     QCT:Print("  |cffffff00Alt + 悬停任务起始物品|r - 背包/银行里的任务起始物品，按住 Alt 看它开启的整条链")
+    QCT:Print("  |cffffff00/qct item|r - 物品诊断：鼠标下的物品有没有被认出来、能不能查到它开启的任务")
     QCT:Print(L["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"])
     QCT:Print(L["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"])
     QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
@@ -497,6 +498,12 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
         -- 玩家反馈太费。代码没删，还在 Health.lua 里 —— 想要就把它加回 toc 的加载列表。
         QCT:Print("血量数值显示已停用（这个功能会一直扫框体找血条，太费）。")
         QCT:Print("想恢复：把 Health.lua 加回 QuestChainTip.toc 的加载列表，这一行代码也还在。")
+    elseif cmd == "item" then
+        if QCT.Tooltip and QCT.Tooltip.DiagnoseItem then
+            QCT.Tooltip:DiagnoseItem()
+        else
+            QCT:Print("提示模块未加载")
+        end
     elseif cmd == "qlog" then
         if QCT.Tooltip and QCT.Tooltip.DiagnoseQuestLog then
             QCT.Tooltip:DiagnoseQuestLog()

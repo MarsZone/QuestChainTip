@@ -1,5 +1,17 @@
 # 更新日志 / Changelog
 
+## 1.5.32
+
+**背包物品那条路补了两条兜底（1.5.31 里它其实没生效）**
+
+- 这个客户端的**提示框文本是 secret value**：`GameTooltip:GetItem()` 能拿到字符串，
+  但一读就抛错，于是「对着物品按 Alt」整条路静默失败
+- 现在只在「能从链接里抠出物品 ID」时才认提示框，抠不出来改问**背包接口**：
+  - 光标下的格子按名字 `ContainerFrame<包序号>Item<槽位>` 认（包号从 0 开始）
+  - 链接走 `GetContainerItemLink`，没有就 `C_Container.GetContainerItemLink`
+- 新增 `/qct item`：鼠标停在物品上敲它，直接列出提示框状态、光标下的背包格子、
+  物品 ID、QuestieDB 有没有、以及最终查到的任务 ID
+
 ## 1.5.31
 
 **修玩家反馈的误触发：背包里悬停物品按 Alt，弹出的是「日志第 N 个任务」**

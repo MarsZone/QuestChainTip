@@ -1540,6 +1540,79 @@ function T:QuestIdUnderMouse()
     return nil
 end
 
+---从链接里抠物品 ID（"|Hitem:2839:0:0:0|h[粗糙的石头]|h" → 2839）
+---@param link string?
+---@return number?
+local function ItemIdFromLink(link)
+    if type(link) ~= "string" then return nil end
+    local ok, num = pcall(string.match, link, "item:(%d+)")
+    if not ok or not num then return nil end
+    return tonumber(num)
+end
+T.ItemIdFromLink = ItemIdFromLink
+
+---取某个背包格子的物品链接。老接口 GetContainerItemLink 在，就用它；
+---这个客户端是「现代 API」，也可能只有 C_Container.GetContainerItemLink，两个都试。
+local function ContainerItemLink(bag, slot)
+    if type(GetContainerItemLink) == "function" then
+        local ok, link = pcall(GetContainerItemLink, bag, slot)
+        if ok and type(link) == "string" and link ~= "" then return link end
+    end
+    local api = _G.C_Container
+    if type(api) == "table" and type(api.GetContainerItemLink) == "function" then
+        local ok, link = pcall(api.GetContainerItemLink, bag, slot)
+        if ok and type(link) == "string" and link ~= "" then return link end
+    end
+    return nil
+end
+
+---光标下的背包格子是哪个（背包序号, 槽位）。
+---暴雪的命名是 ContainerFrame<序号>Item<槽位>，序号从 1 开始，而**背包号从 0 开始**
+---（ContainerFrame1 就是背包 0 号）。这个名字映射是客户端写死的，比问 API 稳。
+---@return number? bag, number? slot, string? frameName
+local function BagSlotUnderCursor()
+    for _, frame in ipairs(CursorFrames(16)) do
+        local name = SafeName(frame)
+        if name then
+            local bagIndex, slot = name:match("^ContainerFrame(%d+)Item(%d+)$")
+            if bagIndex and slot then
+                return tonumber(bagIndex) - 1, tonumber(slot), name
+            end
+        end
+    end
+    return nil, nil, nil
+end
+T.BagSlotUnderCursor = BagSlotUnderCursor
+
+---鼠标下这件物品的链接。先问提示框（最通用），问不到再看是不是压在背包格子上。
+---@return string? link, string? where
+local function ItemLinkUnderMouse()
+    local tip = _G.GameTooltip
+    if tip and type(tip.GetItem) == "function" then
+        local shown = true
+        if type(tip.IsShown) == "function" then
+            local okShown, value = pcall(tip.IsShown, tip)
+            shown = okShown and value and true or false
+        end
+        if shown then
+            local ok, _, link = pcall(tip.GetItem, tip)
+            -- 这个客户端的提示框文本可能是 secret value：能拿到字符串，但一读就抛错。
+            -- 所以必须「能抠出物品 ID」才认，抠不出来就走背包接口那条路。
+            if ok and type(link) == "string" and link ~= "" and ItemIdFromLink(link) then
+                return link, "提示框"
+            end
+        end
+    end
+
+    local bag, slot, frameName = BagSlotUnderCursor()
+    if bag and slot then
+        local link = ContainerItemLink(bag, slot)
+        if link and ItemIdFromLink(link) then return link, "背包格子 " .. frameName end
+    end
+    return nil, nil
+end
+T.ItemLinkUnderMouse = ItemLinkUnderMouse
+
 ---鼠标下这件物品**能开启**哪个任务（靠 QuestieDB 物品表的 startQuest）。
 ---
 ---玩家反馈（1.5.31）：在背包里对着任务起始物品按 Alt，直接看它开启的整条链，
@@ -1547,16 +1620,8 @@ end
 ---@return number? questId, number? itemId
 function T:ItemUnderMouseQuestId()
     if not (D and D.GetQuestStartedByItem) then return nil, nil end
-    local tip = _G.GameTooltip
-    if not tip or type(tip.GetItem) ~= "function" then return nil, nil end
-    if type(tip.IsShown) == "function" then
-        local okShown, shown = pcall(tip.IsShown, tip)
-        if not okShown or not shown then return nil, nil end
-    end
-
-    local ok, _, link = pcall(tip.GetItem, tip)
-    if not ok or type(link) ~= "string" then return nil, nil end
-    local itemId = tonumber(link:match("item:(%d+)"))
+    local link = ItemLinkUnderMouse()
+    local itemId = ItemIdFromLink(link)
     if not itemId then return nil, nil end
 
     local questId = D:GetQuestStartedByItem(itemId)
@@ -2628,6 +2693,43 @@ function T:DiagnoseQuestLog()
         "| 全局处理器:", tostring(self.hookedGlobal and "已挂" or "不存在"))
     QCT:Print("提示：鼠标停在任务行上（或先点一下让它选中）再按 "
         .. QuestLogKeyLabel() .. "，应能打开详情窗。")
+end
+
+---`/qct item` 用：对着物品排查「为什么按 Alt 没弹」。
+function T:DiagnoseItem()
+    QCT:Print("---- 物品诊断 ----")
+
+    local tip = _G.GameTooltip
+    local tipShown = tip ~= nil and type(tip.IsShown) == "function" and tip:IsShown()
+    QCT:Print("提示框:", tipShown and "显示" or "隐藏",
+        "| GameTooltip.GetItem:", (tip and type(tip.GetItem) == "function") and "有" or "没有")
+
+    if tip and type(tip.GetItem) == "function" then
+        local ok, name, link = pcall(tip.GetItem, tip)
+        QCT:Print("  GetItem ->", ok and "调用成功" or "调用失败",
+            "| 名字:", (QCT.SafeText and QCT.SafeText(name)) or tostring(name),
+            "| 链接:", (link ~= nil) and (tostring(link):sub(1, 48)) or "nil")
+    end
+
+    local bag, slot, frameName = BagSlotUnderCursor()
+    QCT:Print("光标下的背包格子:", frameName or "没有",
+        "| 包:", tostring(bag), "| 槽位:", tostring(slot))
+
+    local link, where = ItemLinkUnderMouse()
+    local itemId = ItemIdFromLink(link)
+    QCT:Print("物品来源:", tostring(where),
+        "| 链接:", link and link:sub(1, 48) or "取不到",
+        "| 物品 ID:", tostring(itemId))
+
+    local lib = _G.LibQuestieDB
+    local libItem = type(lib) == "table" and lib.Item or nil
+    QCT:Print("LibQuestieDB:", libItem and "有" or "没有",
+        "| Item.startQuest:", (libItem and type(libItem.startQuest) == "function") and "有" or "没有")
+
+    if itemId and D and D.GetQuestStartedByItem then
+        QCT:Print("  这件物品开启的任务:", tostring(D:GetQuestStartedByItem(itemId)))
+    end
+    QCT:Print("测试方法：鼠标停在物品上（背包里的也行）敲这条命令，把上面几行发我。")
 end
 
 ---把当前运行状态打到聊天框，便于定位“为什么不显示”
