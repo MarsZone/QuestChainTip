@@ -2526,6 +2526,31 @@ function T:Enable()
     end)
 
 
+    -- 在 Questie 画地图图标提示框之前拦下来：能接管就我们画，它一个像素都不显示，
+    -- 不会再出现「先闪一下 Questie 的框、再被我们收掉」
+    TryInstall("Questie 地图提示框接管", function()
+        local loader = _G.QuestieLoader
+        if type(loader) ~= "table" or type(loader.ImportModule) ~= "function" then
+            QCT.Log:Add("map", "没有 QuestieLoader，接管退回轮询方式")
+            return
+        end
+        local ok, mod = pcall(loader.ImportModule, loader, "MapIconTooltip")
+        if not ok or type(mod) ~= "table" or type(mod.ShowOnTooltip) ~= "function" then
+            QCT.Log:Add("map", "拿不到 MapIconTooltip 模块，接管退回轮询方式")
+            return
+        end
+        if mod.__qctHooked then return end
+        mod.__qctHooked = true
+
+        local original = mod.ShowOnTooltip
+        mod.ShowOnTooltip = function(self, tooltip, owner, icons)
+            local okHook, handled = pcall(T.TryTakeOverIconTooltip, T, self, tooltip, owner)
+            if okHook and handled then return true end
+            return original(self, tooltip, owner, icons)
+        end
+        QCT.Log:Add("map", "已挂上 MapIconTooltip.ShowOnTooltip 接管钩子")
+    end)
+
     TryInstall("任务日志钩子", function()
         self:InstallQuestLogHooks()
     end)
@@ -2881,6 +2906,39 @@ function T:DiagnoseQuestLog()
         "| 全局处理器:", tostring(self.hookedGlobal and "已挂" or "不存在"))
     QCT:Print("提示：鼠标停在任务行上（或先点一下让它选中）再按 "
         .. QuestLogKeyLabel() .. "，应能打开详情窗。")
+end
+
+---接管 Questie 的地图图标提示框：**在它画之前**拦下来，避免"一闪而过"。
+---
+---Questie 的 `MapIconTooltip.ShowOnTooltip(self, tooltip, owner, icons)` 是纯 Lua 函数，
+---直接包一层最干净：能认出任务、我们自己的面板也能画出来 → 我们画，并且**不调用原函数**，
+---Questie 的框根本不会出现（不是先出现再被我们收掉）。
+---@return boolean handled 真 = 我们接管了，调用方不要再画
+function T:TryTakeOverIconTooltip(iconData, tooltip, owner)
+    if QCT.db and (QCT.db.muted or QCT.db.hideQuestieTip == false) then return false end
+    if not (T.IsWorldMapOpen and T.IsWorldMapOpen()) then return false end
+
+    local icon = owner or iconData
+    local questId = self:ResolveQuestIdFromOwner(icon)
+    if not questId and iconData and iconData ~= icon then
+        questId = self:ResolveQuestIdFromOwner(iconData)
+    end
+    if not questId then return false end
+
+    self:Update(questId)
+    if not (self.panel and self.panel:IsShown()) then
+        -- 我们画不出来：让 Questie 照常画
+        return false
+    end
+
+    self.mapHoverOwner = icon
+    self.lastQuestId = questId
+    if T.CursorPos then
+        local cx, cy = T.CursorPos()
+        self.mapHoverCursor = cx and { x = cx, y = cy } or nil
+    end
+    QCT.Log:Add("map", "拦下 Questie 的提示框 | 任务:", questId, "| 图标:", SafeName(icon) or "?")
+    return true
 end
 
 ---`/qct map` 用：排查「地图图标上为什么没画面板」。
