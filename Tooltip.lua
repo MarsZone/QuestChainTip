@@ -2221,6 +2221,11 @@ function T:TryOpenFromHover(source, viaKey)
         if ok then owner = value end
     end
 
+    if not owner and self.mapHoverOwner then
+        -- 接管模式下提示框不显示，用接管中的图标
+        owner = self.mapHoverOwner
+    end
+
     if owner then
         self.owner = owner
         self.ownerTime = GetTime()
@@ -2360,6 +2365,9 @@ function T:OnModifierChanged(viaKey, down)
             local tip = _G.GameTooltip
             local tipShown = tip ~= nil and type(tip.IsShown) == "function" and tip:IsShown()
             local owner = tipShown and CurrentOwner(tip) or nil
+            -- 我们自己接管了图标提示框，Questie 的框根本没显示 → 提示框没有持有者。
+            -- 这时候用「接管中的图标」当目标，否则松开 Shift 就什么都不弹。
+            if not owner and self.mapHoverOwner then owner = self.mapHoverOwner end
             if owner and IsMapQuestIcon(owner) and IsWorldMapOpen() then
                 questId = self:ResolveQuestIdFromOwner(owner)
                 source = "地图图标（松开 Shift）"
@@ -2398,6 +2406,19 @@ function T:OnModifierChanged(viaKey, down)
         local tipShown = tip ~= nil and type(tip.IsShown) == "function" and tip:IsShown()
         local currentOwner = tipShown and CurrentOwner(tip) or nil
         local onMapIcon = currentOwner ~= nil and IsMapQuestIcon(currentOwner)
+
+        -- 接管模式下提示框没显示、拿不到持有者：用接管中的图标顶上
+        if not onMapIcon and self.mapHoverOwner and IsMapQuestIcon(self.mapHoverOwner) then
+            local qid = self:ResolveQuestIdFromOwner(self.mapHoverOwner)
+            if qid then
+                if not (QCT.Window and QCT.Window:IsShown() and QCT.Window.questId == qid) then
+                    self:Hide()
+                    self:OpenChainWindow(qid)
+                end
+                QCT.Log:Add("key", "Alt 开窗（接管中的图标） | 任务:", qid)
+                return
+            end
+        end
 
         if not onMapIcon then
             -- 0) 鼠标停在物品上：这件物品**能开启**哪个任务？
