@@ -1125,6 +1125,21 @@ function D:RefreshQuestLog()
     QCT:Trace("questlog", "刷新 | 条目:", entries, "| 标题:", headerCount, "| 失败:", failed)
 end
 
+---这件物品**能开启**哪个任务（QuestieDB 物品表的 startQuest 字段）。
+---
+---用途：背包/银行里的「任务起始物品」——鼠标停上去按 Alt 就能看它开启的整条链。
+---QuestieDB 是独立插件，可能没装，也可能晚加载，所以每次现查、拿不到就返回 nil。
+---@param itemId number?
+---@return number? questId
+function D:GetQuestStartedByItem(itemId)
+    if type(itemId) ~= "number" or itemId <= 0 then return nil end
+    local entity = itemEntity()
+    if not entity or type(entity.startQuest) ~= "function" then return nil end
+    local ok, questId = pcall(entity.startQuest, itemId)
+    if ok and type(questId) == "number" and questId > 0 then return questId end
+    return nil
+end
+
 ---按工具提示标题找任务（只匹配任务日志里的任务，避免误伤物品/NPC 提示）
 ---@param title string?
 ---@return number?

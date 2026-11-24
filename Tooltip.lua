@@ -759,6 +759,36 @@ local function IsChatFrame(owner)
 end
 T.IsChatFrame = IsChatFrame
 
+---这个帧（或它的祖先）是不是背包 / 动作条 / 商人 这类容器里的格子。
+---
+---为什么要排掉：这些格子也都有 GetID()，而**背包格子的 ID 就是槽位号 1,2,3…**，
+---拿它当任务日志索引就会「背包第 N 格 → 日志第 N 个任务」。玩家实测（1.5.31 反馈）：
+---鼠标停在背包里悬停物品按 Alt，同一个物品放第 1 格弹第 1 个任务、放第 2 格弹第 2 个。
+---@param frame table?
+---@return boolean
+local function IsInBagOrBar(frame)
+    if not frame then return false end
+    local patterns = {
+        "Container", "Bag", "ActionButton", "MultiBar", "MicroMenu",
+        "MerchantFrame", "Auction", "BankFrame", "MailFrame", "TradeFrame",
+        "CharacterFrame", "SpellBook", "StabledPet",
+    }
+    local node, depth = frame, 0
+    while node and depth < 8 do
+        local name = SafeName(node)
+        if name then
+            for _, pattern in ipairs(patterns) do
+                if name:find(pattern, 1, true) then return true end
+            end
+        end
+        local ok, parent = pcall(function() return node:GetParent() end)
+        node = ok and parent or nil
+        depth = depth + 1
+    end
+    return false
+end
+T.IsInBagOrBar = IsInBagOrBar
+
 ---判断这个帧是不是在世界地图上（Questie 的地图任务图标都挂在地图帧下面）。
 ---悬停面板默认只在世界地图上出现：任务日志、聊天框里弹面板会挡住玩家要点/要复制的东西。
 local function IsOnWorldMap(owner)
@@ -949,11 +979,25 @@ local function QuestLogRoots()
 
     local list, seen = {}, {}
     local function add(frame)
-        if frame and type(frame) == "table"
-            and type(frame.IsShown) == "function" and not seen[frame] then
-            seen[frame] = true
-            list[#list + 1] = frame
+        if not frame or type(frame) ~= "table" or type(frame.IsShown) ~= "function"
+            or seen[frame] then
+            return
         end
+
+        -- 只收「面板级」的帧。玩家实测（EllesmereUI 等整合包）：
+        -- 常驻菜单栏上有个 EUI_MicroMenu_QuestLog 微型按钮（宽 158），
+        -- 名字带 QuestLog、宽度也够，于是被当成「任务日志一直开着」——
+        -- 后面所有靠 QuestLogShown() 做的判断全跟着错。
+        -- 按钮类小件一律不当日志根；名字里带 Micro（微型菜单）的也排掉。
+        local ok, kind = pcall(frame.GetObjectType, frame)
+        if ok and kind == "Button" then return end
+        local name = SafeName(frame)
+        if name and (name:find("Micro", 1, true) or name:find("Title%d", 1, false)) then
+            return
+        end
+
+        seen[frame] = true
+        list[#list + 1] = frame
     end
 
     add(_G.QuestLogFrame)
@@ -1317,6 +1361,10 @@ local function QuestIdFromHoveredFrame(frame)
         return nil, nil
     end
 
+    -- 背包 / 动作条 / 商人这些容器里的格子不参与任务识别：
+    -- 它们的 GetID() 就是槽位号，能"恰好"换出日志里的第 N 个任务（1.5.31 玩家反馈）
+    if IsInBagOrBar(frame) then return nil, nil end
+
     for _, key in ipairs({ "questId", "questID", "QuestId", "questid" }) do
         local value = SafeNumber(frame, key)
         if value then return value, "鼠标下帧字段 " .. key end
@@ -1425,10 +1473,14 @@ function T:QuestIdUnderMouse()
     -- 1b) 兜底：日志开着 + 提示框正显示 + 鼠标压着一个带数字 ID 的按钮，
     --     而这个 ID 当日志索引能换出真任务 —— 那就是任务行。
     --     客户端没给行按钮起名字、或者改叫别的名字时，前面所有按名字的判断都会漏。
+    --
+    --     必须排掉背包/动作条/商人这类容器：玩家实测（1.5.31 反馈）——
+    --     背包格子的 GetID() 就是槽位号 1,2,3…，正好能换出日志第 1,2,3 个任务，
+    --     于是「鼠标停在背包第 1 格按 Alt」会弹出日志第 1 个任务，第 2 格第 2 个。
     if logShown and tipShown then
         for _, frame in ipairs(hovered) do
             local kindOk, kind = pcall(frame.GetObjectType, frame)
-            if kindOk and kind == "Button" then
+            if kindOk and kind == "Button" and not IsInBagOrBar(frame) then
                 local index = SafeMethodNumber(frame, "GetID")
                 local questId = index and QuestIdFromLogIndex(index)
                 if questId then
@@ -1486,6 +1538,30 @@ function T:QuestIdUnderMouse()
     end
 
     return nil
+end
+
+---鼠标下这件物品**能开启**哪个任务（靠 QuestieDB 物品表的 startQuest）。
+---
+---玩家反馈（1.5.31）：在背包里对着任务起始物品按 Alt，直接看它开启的整条链，
+---比去任务日志里翻半天好用。这里正式做进来。
+---@return number? questId, number? itemId
+function T:ItemUnderMouseQuestId()
+    if not (D and D.GetQuestStartedByItem) then return nil, nil end
+    local tip = _G.GameTooltip
+    if not tip or type(tip.GetItem) ~= "function" then return nil, nil end
+    if type(tip.IsShown) == "function" then
+        local okShown, shown = pcall(tip.IsShown, tip)
+        if not okShown or not shown then return nil, nil end
+    end
+
+    local ok, _, link = pcall(tip.GetItem, tip)
+    if not ok or type(link) ~= "string" then return nil, nil end
+    local itemId = tonumber(link:match("item:(%d+)"))
+    if not itemId then return nil, nil end
+
+    local questId = D:GetQuestStartedByItem(itemId)
+    if questId then return questId, itemId end
+    return nil, nil
 end
 
 ---任务日志里按 Shift 时的提示：左键是 Questie 的隐藏任务，开窗用 Alt。
@@ -2169,6 +2245,21 @@ function T:OnModifierChanged(viaKey, down)
         local onMapIcon = currentOwner ~= nil and IsMapQuestIcon(currentOwner)
 
         if not onMapIcon then
+            -- 0) 鼠标停在物品上：这件物品**能开启**哪个任务？
+            --    背包/银行里的任务起始物品最常用。这一条要放在日志判断前面，
+            --    因为背包格子也有 ID，1.5.30 及以前会被当成「日志第 N 行」误弹。
+            local itemQuestId, itemId = self:ItemUnderMouseQuestId()
+            if itemQuestId then
+                if not (QCT.Window and QCT.Window:IsShown()
+                    and QCT.Window.questId == itemQuestId) then
+                    self:Hide()
+                    self:OpenChainWindow(itemQuestId)
+                end
+                QCT.Log:Add("item", "物品起始任务开窗 | 物品:", tostring(itemId),
+                    "| 任务:", itemQuestId)
+                return
+            end
+
             -- 1) 现场扫鼠标下压着什么（全量遍历 + 每个帧自己的 IsMouseOver），最准的一条。
             --    这个客户端**没有 GetMouseFocus**（玩家实测），也没有全局 MouseIsOver，
             --    所以只能这么问；钩子记下来的行按钮只当兜底。
