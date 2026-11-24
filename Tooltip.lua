@@ -2542,6 +2542,10 @@ function T:Enable()
 
     TryInstall("GameTooltip OnHide", function()
         GameTooltip:HookScript("OnHide", function()
+            -- 我们自己在接管时主动收掉提示框（收掉是为了只留我们的面板），
+            -- 这时候不能把我们的面板也一起收掉 —— 1.5.42 就是死在这里：
+            -- 我们 Hide 提示框 → 这个钩子把面板 Hide → 两边都没有。
+            if T.suppressTipHide then return end
             T.state = nil
             T.owner = nil
             T:Hide()
@@ -2610,11 +2614,21 @@ function T:Enable()
 
                 if T.mapHoverOwner then
                     if oursShown then
-                        -- 我们还画着：Questie 弹回来就继续按掉
-                        if gShown then pcall(gtip.Hide, gtip) end
+                        -- 我们还画着：Questie 弹回来就继续按掉（安静地按，别连累自己的面板）
+                        if gShown then
+                            T.suppressTipHide = true
+                            pcall(gtip.Hide, gtip)
+                            T.suppressTipHide = false
+                        end
                     else
-                        -- 我们没画出来：立刻停止压制，交还给 Questie
+                        -- 我们没画出来：立刻停止压制，并把它原来的提示框叫回来
+                        local owner = T.mapHoverOwner
                         T.mapHoverOwner = nil
+                        T.mapHoverCursor = nil
+                        if owner and type(owner.GetScript) == "function" then
+                            local onEnter = owner:GetScript("OnEnter")
+                            if type(onEnter) == "function" then pcall(onEnter, owner) end
+                        end
                     end
                 elseif gShown then
                     local hoverOwner = CurrentOwner(gtip)
@@ -2625,12 +2639,15 @@ function T:Enable()
                             T:Update(qid)
                             if T.panel ~= nil and T.panel:IsShown() == true then
                                 T.mapHoverOwner = hoverOwner
-                                -- 记一下接管时的光标位置：取不到图标的矩形时用它判断「走没走开」
+                                -- 记一下接管时的光标位置：用它判断「走没走开」
                                 if T.CursorPos then
                                     local cx, cy = T.CursorPos()
                                     T.mapHoverCursor = cx and { x = cx, y = cy } or nil
                                 end
+                                -- 安静地关：不能让 GameTooltip 的 OnHide 把我们的面板收掉
+                                T.suppressTipHide = true
                                 pcall(gtip.Hide, gtip)
+                                T.suppressTipHide = false
                             end
                         end
                     end
