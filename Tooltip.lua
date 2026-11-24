@@ -576,6 +576,22 @@ function T:CycleLabel()
     return string.format("%d/%d", self.cycleIndex or 1, #list)
 end
 
+---现在适合画悬停卡片吗？
+---两种情况一律不画：① 详情窗开着；② 鼠标下是物品（装备/背包/商人货品）。
+---物品那条是关键：提示框对象会被复用，`GetItem()` 已经是物品了，
+---但持有者字段还残留着刚才的任务图标，直接用会"弹一下立刻消失"。
+---@return boolean
+function T:CanShowCard()
+    if QCT.Window and QCT.Window:IsShown() then return false end
+
+    local tip = _G.GameTooltip
+    if tip and type(tip.GetItem) == "function" then
+        local ok, _, link = pcall(tip.GetItem, tip)
+        if ok and type(link) == "string" and link ~= "" then return false end
+    end
+    return true
+end
+
 ---把面板贴到光标旁边（重建时调用，会记下"画面板时的位置"给离开判断用）
 function T:PlacePanel()
     local panel = self.panel
@@ -656,6 +672,11 @@ function T:Update(questId)
         return
     end
     if not questId then
+        self:Hide()
+        return
+    end
+    -- 详情窗开着 / 鼠标下是物品 → 不画（接管和轮询都会调到 Update，这里同样要挡）
+    if not self:CanShowCard() then
         self:Hide()
         return
     end
@@ -2100,6 +2121,12 @@ end
 
 ---@param force boolean? 忽略缓存强制重建（设置改动时用）
 function T:Refresh(force)
+    -- 详情窗已经开着：悬停小卡片一律不画。
+    -- 否则鼠标扫过装备/物品链接时，提示框触发一次重建，卡片会"冒出来一下又消失"。
+    if QCT.Window and QCT.Window:IsShown() then
+        self:Hide()
+        return
+    end
     if QCT.db and QCT.db.muted then
         self:Hide()
         return
@@ -2125,6 +2152,12 @@ function T:Refresh(force)
             pcall(tip.Hide, tip)
             self.suppressTipHide = false
         end
+        return
+    end
+
+    -- 详情窗开着 / 鼠标下是物品 → 不画卡片（判定集中在 CanShowCard）
+    if not self:CanShowCard() then
+        self:Hide()
         return
     end
 
@@ -2307,6 +2340,13 @@ function T:OpenChainWindow(questId)
         QCT:Print(L["没有可显示的任务：先把鼠标移到任务上，或先打开任务日志。"])
         return
     end
+    -- 记下这个窗是从哪儿开的：只有「地图上开的」才跟着地图关闭一起收，
+    -- 从任务日志/物品开的窗不该被地图状态影响（1.5.70 玩家反馈：悬停装备时窗口莫名消失）
+    if QCT.Window then
+        local mapWasOpen = self.IsWorldMapOpen and self:IsWorldMapOpen()
+        QCT.Window.fromMap = mapWasOpen and true or false
+    end
+
     -- 同一点位有多个任务时，把轮换列表传给详情窗（标题下面会出现页签）
     local tabList
     local cycle = self.cycleList
@@ -2937,7 +2977,11 @@ function T:Enable()
                 T.ownerTime = nil
                 if T.state then T.state.questId = nil end
                 if QCT.Window and QCT.Window:IsShown() then
-                    pcall(QCT.Window.Close, QCT.Window)
+                    if QCT.Window.fromMap then
+                        T.mapClosedAt = GetTime()
+                    else
+                        QCT.Log:Add("map", "地图关了，但这个窗不是地图开的，保留")
+                    end
                 end
 
                 -- 关图瞬间 Questie 的提示框还挂在屏幕上（它的图标一隐藏，OnLeave 不一定触发），
@@ -2963,6 +3007,19 @@ function T:Enable()
                 QCT.Log:Add("map", "世界地图已关闭，清空悬停缓存并收起详情窗")
             end
             lastMapOpen = mapOpen
+
+            -- 地图关了 0.4 秒还没回来，才把「地图上开的窗」收起来（避免瞬时抖动误关）
+            if T.mapClosedAt and not mapOpen then
+                if (GetTime() - T.mapClosedAt) > 0.4 then
+                    T.mapClosedAt = nil
+                    if QCT.Window and QCT.Window:IsShown() and QCT.Window.fromMap then
+                        QCT.Log:Add("map", "地图已关闭 0.4s，收起地图开的详情窗")
+                        pcall(QCT.Window.Close, QCT.Window)
+                    end
+                end
+            elseif mapOpen then
+                T.mapClosedAt = nil
+            end
 
             -- 1.5.37：地图图标上把 Questie 的提示框收掉，只留我们自己的框。
             --
@@ -3036,7 +3093,9 @@ function T:Enable()
                 local hover2 = gShown2 and CurrentOwner(gtip2) or nil
 
                 local elsewhere = false
-                if hover2 and QuestieIconKind(hover2) ~= "map" then
+                -- 判据要用**广义**的「任务图标」：官方任务问号（暴雪 POI）不是 Questie 图标，
+                -- 用 QuestieIconKind 判断会被当成"不在图标上"，于是每帧收一次 → 面板一直闪。
+                if hover2 and not IsMapQuestIcon(hover2) then
                     elsewhere = true
                 elseif T.CursorPos and T.panelAtCursor then
                     local cx2, cy2 = T.CursorPos()
@@ -3367,6 +3426,14 @@ function T:TryTakeOverIconTooltip(iconData, tooltip, owner)
     if not (T.IsWorldMapOpen and T.IsWorldMapOpen()) then return false end
 
     local icon = owner or iconData
+
+    -- 鼠标下是物品 / 详情窗开着：这一次的 Questie 调用是残留的，直接吞掉（既不全画，也不让它画）
+    if not self:CanShowCard() then
+        self:Hide()
+        QCT.Log:Add("map", "鼠标下是物品/详情窗开着，吞掉一次 Questie 提示框调用")
+        return true
+    end
+
     local questId = self:ResolveQuestIdFromOwner(icon)
     if not questId and iconData and iconData ~= icon then
         questId = self:ResolveQuestIdFromOwner(iconData)

@@ -938,6 +938,9 @@ function W:Open(questId, tabList)
 end
 
 function W:Close()
+    -- 记一笔：万一窗口"莫名消失"，/qct trace 能看到是哪一次关的
+    QCT.Log:Add("window", "Close() 被调用 | 当前任务:", tostring(self.questId),
+        "| 来源:", self.fromMap and "地图" or "非地图")
     self:HideItemTip()
     if self.frame then self.frame:Hide() end
 end
