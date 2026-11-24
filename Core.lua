@@ -343,6 +343,7 @@ local function PrintHelp()
     QCT:Print("  |cffffff00Alt + 悬停任务起始物品|r - 背包/银行里的任务起始物品，按住 Alt 看它开启的整条链")
     QCT:Print("  |cffffff00/qct item|r - 物品诊断：鼠标下的物品有没有被认出来、能不能查到它开启的任务")
     QCT:Print("  |cffffff00/qct mute on|off|r - 静音：完全不画面板/详情窗，用来确认某个弹窗是不是本插件弹的")
+    QCT:Print("  |cffffff00/qct map|r - 地图图标诊断：提示框持有者、图标矩形、光标位置、解析到的任务")
     QCT:Print(L["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"])
     QCT:Print(L["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"])
     QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
@@ -534,6 +535,12 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
             QCT:Print("  现在按 Shift 悬停图标，如果还有弹窗，就不是本插件弹的。恢复：/qct mute off")
         else
             QCT:Print("已恢复：面板和详情窗正常显示。")
+        end
+    elseif cmd == "map" then
+        if QCT.Tooltip and QCT.Tooltip.DiagnoseMapIcon then
+            QCT.Tooltip:DiagnoseMapIcon()
+        else
+            QCT:Print("提示模块未加载")
         end
     elseif cmd == "item" then
         if QCT.Tooltip and QCT.Tooltip.DiagnoseItem then

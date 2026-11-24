@@ -2597,48 +2597,68 @@ function T:Enable()
             lastMapOpen = mapOpen
 
             -- 1.5.37：地图图标上把 Questie 的提示框收掉，只留我们自己的框。
-            -- 只在「能认出任务」时才收 —— 认不出就原样留着，免得更糟。
+            --
+            -- 铁律：**只有我们自己的面板真的画出来了，才允许按掉 Questie 的框**。
+            -- 1.5.37 第一版没这条，结果认得出任务 ID、但我们的面板因为别的原因没画出来
+            -- （数据没就绪 / 取不到框体矩形），Questie 被按掉了、我们也没画，屏幕上就空了。
             if mapOpen and QCT.db and QCT.db.hideQuestieTip ~= false then
                 local gtip = _G.GameTooltip
                 local gShown = gtip ~= nil and type(gtip.IsShown) == "function" and gtip:IsShown()
+                local oursShown = T.panel ~= nil and T.panel:IsShown() == true
+
                 if T.mapHoverOwner then
-                    -- Questie 又把它弹回来的话，继续按掉
-                    if gShown then pcall(gtip.Hide, gtip) end
+                    if oursShown then
+                        -- 我们还画着：Questie 弹回来就继续按掉
+                        if gShown then pcall(gtip.Hide, gtip) end
+                    else
+                        -- 我们没画出来：立刻停止压制，交还给 Questie
+                        T.mapHoverOwner = nil
+                    end
                 elseif gShown then
                     local hoverOwner = CurrentOwner(gtip)
                     if hoverOwner and QuestieIconKind(hoverOwner) == "map" then
                         local qid = T:ResolveQuestIdFromOwner(hoverOwner)
                         if qid then
-                            T.mapHoverOwner = hoverOwner
                             T.lastQuestId = qid
                             T:Update(qid)
-                            pcall(gtip.Hide, gtip)
+                            if T.panel ~= nil and T.panel:IsShown() == true then
+                                T.mapHoverOwner = hoverOwner
+                                -- 记一下接管时的光标位置：取不到图标的矩形时用它判断「走没走开」
+                                if T.CursorPos then
+                                    local cx, cy = T.CursorPos()
+                                    T.mapHoverCursor = cx and { x = cx, y = cy } or nil
+                                end
+                                pcall(gtip.Hide, gtip)
+                            end
                         end
                     end
                 end
             end
 
-            -- 我们把 Questie 的地图提示框收掉了，所以「鼠标离开图标」要自己判断：
-            -- 光标不在那个图标的矩形里（或地图关了）就把面板收起来
+            -- 光标离开图标（或地图关了）就把面板收起来。
+            -- 优先用图标的矩形判断；某些图标拿不到矩形（或这客户端 GetRect 不给值）时，
+            -- 退回「光标离接管点超过 60 像素」——1.5.37 第一版没这个兜底，
+            -- 拿不到矩形就直接判「离开了」，面板一闪就没了。
             if T.mapHoverOwner then
                 local leave = false
                 if not mapOpen then
                     leave = true
                 else
                     local left, bottom, width, height = FrameRect(T.mapHoverOwner)
-                    if not left then
-                        leave = true
-                    elseif T.CursorPos then
-                        local cx, cy = T.CursorPos()
-                        if cx then
-                            local margin = 12
-                            leave = not (cx >= left - margin and cx <= left + width + margin
-                                and cy >= bottom - margin and cy <= bottom + height + margin)
-                        end
+                    local cx, cy
+                    if T.CursorPos then cx, cy = T.CursorPos() end
+                    if left and cx then
+                        local margin = 12
+                        leave = not (cx >= left - margin and cx <= left + width + margin
+                            and cy >= bottom - margin and cy <= bottom + height + margin)
+                    elseif cx and T.mapHoverCursor then
+                        local dx, dy = cx - T.mapHoverCursor.x, cy - T.mapHoverCursor.y
+                        leave = (dx * dx + dy * dy) > (60 * 60)
                     end
                 end
                 if leave then
                     T.mapHoverOwner = nil
+                    T.mapHoverCursor = nil
                     T:Hide()
                 end
             end
@@ -2828,6 +2848,34 @@ function T:DiagnoseQuestLog()
         "| 全局处理器:", tostring(self.hookedGlobal and "已挂" or "不存在"))
     QCT:Print("提示：鼠标停在任务行上（或先点一下让它选中）再按 "
         .. QuestLogKeyLabel() .. "，应能打开详情窗。")
+end
+
+---`/qct map` 用：排查「地图图标上为什么没画面板」。
+function T:DiagnoseMapIcon()
+    QCT:Print("---- 地图图标诊断 ----")
+    QCT:Print("世界地图:", (T.IsWorldMapOpen and T.IsWorldMapOpen()) and "开" or "关",
+        "| 我们的面板:", (self.panel and self.panel:IsShown()) and "显示" or "隐藏",
+        "| 接管中的图标:", SafeName(self.mapHoverOwner) or "无")
+
+    local tip = _G.GameTooltip
+    local shown = tip ~= nil and type(tip.IsShown) == "function" and tip:IsShown()
+    QCT:Print("GameTooltip:", shown and "显示" or "隐藏")
+    if not shown then
+        QCT:Print("  （提示框没显示：鼠标先停在图标上再敲这条命令）")
+        return
+    end
+
+    local owner = CurrentOwner(tip)
+    QCT:Print("  持有者:", SafeName(owner) or "无",
+        "| 类型:", tostring(QuestieIconKind(owner)))
+    if owner then
+        local left, bottom, width, height = FrameRect(owner)
+        QCT:Print("  图标矩形:", left and string.format("%.0f,%.0f %.0fx%.0f", left, bottom, width, height) or "取不到")
+        local cx, cy
+        if T.CursorPos then cx, cy = T.CursorPos() end
+        QCT:Print("  光标:", cx and string.format("%.0f,%.0f", cx, cy) or "取不到")
+        QCT:Print("  解析到的任务:", tostring(self:ResolveQuestIdFromOwner(owner)))
+    end
 end
 
 ---`/qct item` 用：对着物品排查「为什么按 Alt 没弹」。
