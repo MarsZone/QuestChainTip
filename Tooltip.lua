@@ -2650,8 +2650,10 @@ function T:Enable()
                 if not mapOpen then
                     leave = true
                 elseif cx and T.mapHoverCursor then
+                    -- 180px：Questie 图标手柄很大（矩形 17x17、光标常在 60~80px 外），
+                    -- 阈值太小会让面板一抖就消失
                     local dx, dy = cx - T.mapHoverCursor.x, cy - T.mapHoverCursor.y
-                    leave = (dx * dx + dy * dy) > (80 * 80)
+                    leave = (dx * dx + dy * dy) > (180 * 180)
                 end
 
                 if leave then
@@ -2667,7 +2669,7 @@ function T:Enable()
                         if left then
                             local px, py = left + width / 2, bottom + height / 2
                             local dx, dy = cx - px, cy - py
-                            near = (dx * dx + dy * dy) < (160 * 160)
+                            near = (dx * dx + dy * dy) < (200 * 200)
                         end
                         if near and type(owner.GetScript) == "function" then
                             local onEnter = owner:GetScript("OnEnter")

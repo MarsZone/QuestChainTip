@@ -39,9 +39,9 @@ local DEFAULTS = {
     showChain = true,
     chainRewards = true,    -- 后续任务每行也显示经验/金钱/状态
     showPrereq = true,      -- 是否显示前置任务
-    -- 地图图标上是否收掉 Questie 的提示框。**默认关** —— 这功能在你的客户端上还没验证通，
-    -- 默认开着会直接把人家的提示框吞掉还不显示东西。确认可用后再手动打开。
-    hideQuestieTip = false,
+    -- 地图图标上收掉 Questie 的提示框，只显示我们自己的面板（默认开，1.5.42 起）。
+    -- 前提条件：我们自己的面板必须画出来了，才允许按掉它的框（见 Tooltip 里的 oursShown 判断）。
+    hideQuestieTip = true,
     panelMode = "map",      -- 悬停面板：off=关闭 / map=仅世界地图（默认） / all=全部位置
     chainKey = "SHIFT",     -- 详情窗快捷键（世界地图）：SHIFT / CTRL / ALT / NONE / 任意键
     questLogKey = "ALT",    -- 任务日志快捷键：ALT / CTRL / NONE（Shift 留给原生的链接到聊天框）
@@ -298,6 +298,13 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         if not QCT.db.hideQuestieTipReverted then
             QCT.db.hideQuestieTipReverted = true
             QCT.db.hideQuestieTip = false
+        end
+
+        -- 1.5.42：判据修好之后这个功能能用了，再拨回「开」一次。
+        -- 只拨一次：之后玩家自己在设置里关掉就不会被改回来。
+        if not QCT.db.hideQuestieTipOn then
+            QCT.db.hideQuestieTipOn = true
+            QCT.db.hideQuestieTip = true
         end
 
         if QCT.Log then QCT.Log:Init() end
