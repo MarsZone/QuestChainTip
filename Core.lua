@@ -40,9 +40,7 @@ local DEFAULTS = {
     chainRewards = true,    -- 后续任务每行也显示经验/金钱/状态
     showPrereq = true,      -- 是否显示前置任务
     panelMode = "map",      -- 悬停面板：off=关闭 / map=仅世界地图（默认） / all=全部位置
-    -- 1.5.35：地图上也改成 Alt。Shift 会和 Questie 的「按住 Shift 看任务详情」直接打架 ——
-    -- 玩家一按 Shift，Questie 就把提示框展开成一大段描述/奖励/后续任务，满屏都是字。
-    chainKey = "ALT",       -- 详情窗快捷键（世界地图）：SHIFT / CTRL / ALT / NONE / 任意键
+    chainKey = "SHIFT",     -- 详情窗快捷键（世界地图）：SHIFT / CTRL / ALT / NONE / 任意键
     questLogKey = "ALT",    -- 任务日志快捷键：ALT / CTRL / NONE（Shift 留给原生的链接到聊天框）
     panelWidth = 380,       -- 悬停面板文本列宽（像素，240~560）
     windowWidth = "AUTO",   -- 详情窗宽度："AUTO"（按屏幕）或 420~900 的像素值
@@ -55,6 +53,7 @@ local DEFAULTS = {
     chainDepthShift = 20,   -- 详情窗（地图上按 Shift）最多列多少环
     rewardCache = {},       -- questId -> 物品奖励缓存（客户端接口只对已接任务有效，缓存用来补历史）
     diag = false,           -- 在聊天框里输出「为什么没开窗 / 已开窗」的诊断（排查问题时才开）
+    muted = false,          -- 静音：完全不画面板、不开详情窗（用来确认某个弹窗是不是本插件弹的）
     debug = false,
 }
 
@@ -157,11 +156,9 @@ function QCT:Start()
         self:Trace("start", "Questie 数据源暂未就绪，钩子已安装，稍后自动接上")
     end
 
-    -- 手势迁移提示（只出现一次）：Shift -> Alt
-    if self.db and self.db.gestureNotice then
-        self.db.gestureNotice = nil
-        self:Print("手势已改用 |cffffff00Alt|r：地图上按住 Alt 悬停任务图标，任务日志里按住 Alt 点任务行。")
-        self:Print("  Shift 交还给 Questie（它靠 Shift 展开提示框详情，和我们的键撞在一起会很乱）。要改回来：/qct key shift")
+    -- 静音时提醒一句，免得玩家以为插件坏了
+    if self.db and self.db.muted then
+        self:Print("插件处于|cffffff00静音|r状态：面板和详情窗都不会画。恢复：/qct mute off")
     end
 
     -- 先把钩子装上：后面任何一步出错都不能让插件变成“完全不工作”
@@ -273,16 +270,12 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         -- 1.5.6：悬停面板的默认值从「关闭」改成「仅世界地图」。
         -- 老存档里存的是 "off"，光改 DEFAULTS 对老用户不生效，所以这里做一次迁移：
         -- 只迁移一次，之后玩家在设置里手动关掉就不会被改回来。
-        -- 1.5.35：手势从 Shift 改成 Alt。
-        -- 原因：Questie 靠「按住 Shift」展开地图提示框的详情，两边撞在同一次按键上，
-        -- 结果玩家想开我们的窗，屏幕上先糊出一大段 Questie 的详情。
-        -- 只迁移一次：之后玩家自己 /qct key shift 改回来就不会被覆盖。
-        if not QCT.db.gestureAltMigrated then
-            QCT.db.gestureAltMigrated = true
-            if QCT.db.chainKey == "SHIFT" then
-                QCT.db.chainKey = "ALT"
-                QCT.db.questLogKey = "ALT"
-                QCT.db.gestureNotice = true
+        -- 1.5.36：1.5.35 那个「Shift 自动改成 Alt」的迁移撤掉了 —— 作者的 Shift 不能动。
+        -- 已经跑过迁移的存档要改回来（只改这一次，之后玩家自己的选择不动）。
+        if QCT.db.gestureAltMigrated and not QCT.db.gestureReverted then
+            QCT.db.gestureReverted = true
+            if QCT.db.chainKey == "ALT" and QCT.db.questLogKey == "ALT" then
+                QCT.db.chainKey = "SHIFT"
             end
         end
 
@@ -345,6 +338,7 @@ local function PrintHelp()
     QCT:Print("  |cffffff00按住 Shift 再松开|r - 悬停在任务上，松开 Shift 才弹窗（按下时不弹，留给 Questie 隐藏任务）")
     QCT:Print("  |cffffff00Alt + 悬停任务起始物品|r - 背包/银行里的任务起始物品，按住 Alt 看它开启的整条链")
     QCT:Print("  |cffffff00/qct item|r - 物品诊断：鼠标下的物品有没有被认出来、能不能查到它开启的任务")
+    QCT:Print("  |cffffff00/qct mute on|off|r - 静音：完全不画面板/详情窗，用来确认某个弹窗是不是本插件弹的")
     QCT:Print(L["  |cffffff00/qct qlog|r - 任务日志快捷键诊断"])
     QCT:Print(L["  |cffffff00/qct mouse|r - 鼠标现在压在哪个帧上（祖先链 / ID / 提示框持有者）"])
     QCT:Print(L["  |cffffff00/qct width <auto|420-900>|r - 详情窗宽度"])
@@ -520,6 +514,23 @@ SlashCmdList["QUESTCHAINTIP"] = function(input)
         -- 玩家反馈太费。代码没删，还在 Health.lua 里 —— 想要就把它加回 toc 的加载列表。
         QCT:Print("血量数值显示已停用（这个功能会一直扫框体找血条，太费）。")
         QCT:Print("想恢复：把 Health.lua 加回 QuestChainTip.toc 的加载列表，这一行代码也还在。")
+    elseif cmd == "mute" or cmd == "silent" then
+        local want = (rest or ""):gsub("^%s+", ""):gsub("%s+$", ""):lower()
+        if want == "on" then
+            QCT.db.muted = true
+        elseif want == "off" then
+            QCT.db.muted = false
+        else
+            QCT.db.muted = not QCT.db.muted
+        end
+        if QCT.db.muted then
+            if QCT.Tooltip and QCT.Tooltip.Hide then pcall(QCT.Tooltip.Hide, QCT.Tooltip) end
+            if QCT.Window and QCT.Window.Close then pcall(QCT.Window.Close, QCT.Window) end
+            QCT:Print("已|cffffff00静音|r：本插件的面板和详情窗都不会再画（按键也不再响应）。")
+            QCT:Print("  现在按 Shift 悬停图标，如果还有弹窗，就不是本插件弹的。恢复：/qct mute off")
+        else
+            QCT:Print("已恢复：面板和详情窗正常显示。")
+        end
     elseif cmd == "item" then
         if QCT.Tooltip and QCT.Tooltip.DiagnoseItem then
             QCT.Tooltip:DiagnoseItem()

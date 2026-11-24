@@ -1931,6 +1931,10 @@ end
 
 ---@param force boolean? 忽略缓存强制重建（设置改动时用）
 function T:Refresh(force)
+    if QCT.db and QCT.db.muted then
+        self:Hide()
+        return
+    end
     local tip = _G.GameTooltip
     local owner = CurrentOwner(tip)
     if owner then self.owner = owner end
@@ -2109,6 +2113,11 @@ end
 ---打开整条任务链详情窗。
 ---@param questId number?
 function T:OpenChainWindow(questId)
+    -- 静音模式：完全不画（玩家用来确认某个弹窗到底是不是本插件弹的）
+    if QCT.db and QCT.db.muted then
+        QCT.Log:Add("mute", "静音中，忽略开窗请求 | 任务:", tostring(questId))
+        return
+    end
     if not QCT.Window then return end
     if not questId then
         QCT:Print(L["没有可显示的任务：先把鼠标移到任务上，或先打开任务日志。"])
@@ -2325,6 +2334,7 @@ end
 ---@param viaKey string? 按下的键族（SHIFT / CTRL / ALT），由事件直接带进来
 ---@param down boolean? true = 按下，false = 松开（Shift 那条路要「松开才弹」）
 function T:OnModifierChanged(viaKey, down)
+    if QCT.db and QCT.db.muted then return end
     -- 任务日志里 **Shift+点击是 Questie 的「隐藏/显示任务」**。
     -- 所以 Shift 这条手势改成「**松开才弹**」：
     --   * 按下 Shift：什么都不做 —— 这一次点击能完整落到任务行上，任务正常隐藏
