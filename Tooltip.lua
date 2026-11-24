@@ -386,6 +386,13 @@ function T:Layout(content)
         local item = content[index]
         local row = AcquireRow(panel, index)
 
+        -- 间隔行：只占高度不放文字，用来把区块分开（1.5.34 起的美化）
+        if item.gap then
+            row:Hide()
+            row.left:SetText("")
+            row.right:SetText("")
+            y = y - item.gap
+        else
         row:Show()
 
         row.left:ClearAllPoints()
@@ -441,6 +448,7 @@ function T:Layout(content)
         -- GetStringHeight 不含字体下沿的行距，逐行累加会让面板底部越来越贴边
         -- （顶部留 10px、底部只剩 2~3px，最后一行几乎压住边框）。每行补 1px。
         y = y - height - 1
+        end
     end
 
     -- 收起多余的行
@@ -554,8 +562,15 @@ function T:Build(questId)
         if #content >= MAX_ROWS then return end
         content[#content + 1] = { left = left, right = right, r = r or 1, g = g or 1, b = b or 1 }
     end
+    ---空白间隔：把区块分开，别让字挤成一片
+    local function addGap(height)
+        if #content >= MAX_ROWS then return end
+        content[#content + 1] = { left = "", gap = height or 6 }
+    end
+    ---区块小标题：暗金色 + 前后留白，和正文区分开
     local function addHeader(text)
-        addLine(F.DIM .. text .. "|r")
+        if #content > 0 then addGap(7) end
+        addLine(F.Hex(0.78, 0.66, 0.42, text), 1, 1, 1)
     end
 
     -- 每个区块单独保护：某一段取数据出错只丢这一段，不至于整块面板消失
@@ -572,6 +587,28 @@ function T:Build(questId)
         addDouble(QuestTitle(questId), StateText(questId))
     end)
 
+    -- 接取 / 交付：一眼看出要去找谁，比把这段塞进描述里清楚得多
+    section("接取与交付", function()
+        local startName, startZone = D:GetStartPlace(questId)
+        local endName, endZone = D:GetEndPlace(questId)
+        if not startName and not endName then return end
+
+        local function place(label, name, zone)
+            local text = F.DIM .. label .. "|r " .. name
+            if zone and zone ~= "" then
+                text = text .. "  " .. F.DIM .. zone .. "|r"
+            end
+            addLine(text, 1, 1, 1)
+        end
+
+        local added = false
+        if startName then place(L["接取："], startName, startZone); added = true end
+        if endName and (endName ~= startName or endZone ~= startZone) then
+            place(L["交付："], endName, endZone); added = true
+        end
+        if added then addGap(3) end
+    end)
+
     local hasContent = false
 
     -- 任务描述
@@ -586,19 +623,19 @@ function T:Build(questId)
         local truncated = false
         for _, paragraph in ipairs(desc) do
             if used >= maxLines then truncated = true break end
-            for _, wrapped in ipairs(F.Wrap(paragraph, INDENT, textWidth - 10, nil)) do
+            for _, wrapped in ipairs(F.Wrap(paragraph, "  ", textWidth - 10, nil)) do
                 if used >= maxLines then truncated = true break end
-                addLine(wrapped, 0.86, 0.86, 0.86)
+                addLine(wrapped, 0.84, 0.84, 0.84)
                 used = used + 1
             end
         end
         if truncated then
-            addLine(F.DIM .. INDENT .. L.F("…（在世界地图上按住 %s 查看完整任务链）", ChainKeyLabel()) .. "|r")
+            addLine(F.DIM .. "  " .. L.F("…（在世界地图上按住 %s 查看完整任务链）", ChainKeyLabel()) .. "|r")
         end
         hasContent = true
     end)
 
-    -- 任务奖励
+    -- 任务奖励：经验/金钱一行，物品一行，声望各自一行
     section("奖励", function()
         if not db.showRewards then return end
 
@@ -620,7 +657,7 @@ function T:Build(questId)
             parts[#parts + 1] = F.Coins(money)
         end
         if #parts > 0 then
-            addLine(INDENT .. table.concat(parts, "   "), 1, 1, 1)
+            addLine("  " .. table.concat(parts, "    "), 1, 1, 1)
         end
 
         if #items > 0 then
@@ -628,12 +665,12 @@ function T:Build(questId)
             for _, item in ipairs(items) do
                 texts[#texts + 1] = item.text
             end
-            addLine(INDENT .. table.concat(texts, "  "), 1, 1, 1)
+            addLine("  " .. table.concat(texts, "   "), 1, 1, 1)
         end
 
         for _, rep in ipairs(reputations) do
             local text = (rep.value > 0 and "+" or "") .. rep.value .. " " .. rep.faction
-            addLine(INDENT .. REP_ICON .. " " .. F.Hex(0.35, 0.55, 1, text), 1, 1, 1)
+            addLine("  " .. REP_ICON .. " " .. F.Hex(0.35, 0.55, 1, text), 1, 1, 1)
         end
 
         hasContent = true
@@ -652,12 +689,12 @@ function T:Build(questId)
             local right = ""
             if db.chainRewards then
                 right = RewardShort(nextId)
-                if right ~= "" then right = right .. " " end
+                if right ~= "" then right = F.DIM .. right .. "|r  " end
             end
-            addDouble(INDENT .. QuestTitle(nextId), right .. StateText(nextId))
+            addDouble("  " .. F.DIM .. "→|r " .. QuestTitle(nextId), right .. StateText(nextId))
         end
         if truncated and not shift then
-            addLine(F.DIM .. INDENT .. L.F("…（在世界地图上按住 %s 查看完整任务链）", ChainKeyLabel()) .. "|r")
+            addLine(F.DIM .. "  " .. L.F("…（在世界地图上按住 %s 查看完整任务链）", ChainKeyLabel()) .. "|r")
         end
         hasContent = true
     end)
@@ -671,7 +708,7 @@ function T:Build(questId)
 
         addHeader(L["前置任务"])
         for _, preId in ipairs(prereqs) do
-            addDouble(INDENT .. QuestTitle(preId), StateText(preId))
+            addDouble("  " .. F.DIM .. "←|r " .. QuestTitle(preId), StateText(preId))
         end
     end)
 
