@@ -39,7 +39,9 @@ local DEFAULTS = {
     showChain = true,
     chainRewards = true,    -- 后续任务每行也显示经验/金钱/状态
     showPrereq = true,      -- 是否显示前置任务
-    hideQuestieTip = true,  -- 地图图标上收掉 Questie 的提示框，只显示我们自己的面板（默认开）
+    -- 地图图标上是否收掉 Questie 的提示框。**默认关** —— 这功能在你的客户端上还没验证通，
+    -- 默认开着会直接把人家的提示框吞掉还不显示东西。确认可用后再手动打开。
+    hideQuestieTip = false,
     panelMode = "map",      -- 悬停面板：off=关闭 / map=仅世界地图（默认） / all=全部位置
     chainKey = "SHIFT",     -- 详情窗快捷键（世界地图）：SHIFT / CTRL / ALT / NONE / 任意键
     questLogKey = "ALT",    -- 任务日志快捷键：ALT / CTRL / NONE（Shift 留给原生的链接到聊天框）

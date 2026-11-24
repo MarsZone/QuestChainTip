@@ -2636,30 +2636,42 @@ function T:Enable()
             end
 
             -- 光标离开图标（或地图关了）就把面板收起来。
-            -- 优先用图标的矩形判断；某些图标拿不到矩形（或这客户端 GetRect 不给值）时，
-            -- 退回「光标离接管点超过 60 像素」——1.5.37 第一版没这个兜底，
-            -- 拿不到矩形就直接判「离开了」，面板一闪就没了。
+            --
+            -- 1.5.37/38 用「光标在不在图标矩形里」判断，结果这个客户端上矩形不可靠，
+            -- 面板刚画就被收掉。现在只用一条稳定判据：**光标离接管点超过 80 像素**。
+            -- 走了之后还要把被我们按掉的 Questie 提示框「叫回来」，不能留空屏幕。
             if T.mapHoverOwner then
+                local cx, cy
+                if T.CursorPos then cx, cy = T.CursorPos() end
+
                 local leave = false
                 if not mapOpen then
                     leave = true
-                else
-                    local left, bottom, width, height = FrameRect(T.mapHoverOwner)
-                    local cx, cy
-                    if T.CursorPos then cx, cy = T.CursorPos() end
-                    if left and cx then
-                        local margin = 12
-                        leave = not (cx >= left - margin and cx <= left + width + margin
-                            and cy >= bottom - margin and cy <= bottom + height + margin)
-                    elseif cx and T.mapHoverCursor then
-                        local dx, dy = cx - T.mapHoverCursor.x, cy - T.mapHoverCursor.y
-                        leave = (dx * dx + dy * dy) > (60 * 60)
-                    end
+                elseif cx and T.mapHoverCursor then
+                    local dx, dy = cx - T.mapHoverCursor.x, cy - T.mapHoverCursor.y
+                    leave = (dx * dx + dy * dy) > (80 * 80)
                 end
+
                 if leave then
+                    local owner = T.mapHoverOwner
                     T.mapHoverOwner = nil
                     T.mapHoverCursor = nil
                     T:Hide()
+
+                    -- 光标还在这个图标附近：把 Questie 的提示框重新弹一次
+                    if owner and cx and cy then
+                        local left, bottom, width, height = FrameRect(owner)
+                        local near = true
+                        if left then
+                            local px, py = left + width / 2, bottom + height / 2
+                            local dx, dy = cx - px, cy - py
+                            near = (dx * dx + dy * dy) < (160 * 160)
+                        end
+                        if near and type(owner.GetScript) == "function" then
+                            local onEnter = owner:GetScript("OnEnter")
+                            if type(onEnter) == "function" then pcall(onEnter, owner) end
+                        end
+                    end
                 end
             end
 
