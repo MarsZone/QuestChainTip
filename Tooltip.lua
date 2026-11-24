@@ -2877,9 +2877,14 @@ function T:DiagnoseMapIcon()
         return
     end
 
-    local owner = CurrentOwner(tip)
+    -- Questie 自己会在 GameTooltip 上挂 ._owner（MapIconTooltip.ShowOnTooltip 里设的），
+    -- 拿不到 GetOwner 时它是最后的线索
+    local questieOwner = tip._owner
+    local owner = CurrentOwner(tip) or questieOwner
     QCT:Print("  持有者:", SafeName(owner) or "无",
-        "| 类型:", tostring(QuestieIconKind(owner)))
+        "| 类型:", tostring(QuestieIconKind(owner)),
+        "| Questie._owner:", SafeName(questieOwner) or "无",
+        "| 接管开关:", (QCT.db and QCT.db.hideQuestieTip) and "开" or "关")
     if owner then
         local left, bottom, width, height = FrameRect(owner)
         QCT:Print("  图标矩形:", left and string.format("%.0f,%.0f %.0fx%.0f", left, bottom, width, height) or "取不到")

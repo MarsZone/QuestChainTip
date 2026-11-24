@@ -292,6 +292,14 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         -- 静音只是排查开关，不跨会话保留：免得哪天忘了关，以为插件坏了
         QCT.db.muted = false
 
+        -- 1.5.37 把 hideQuestieTip 默认设成 true 并存进了存档；1.5.39 改回默认 false
+        -- 但对老存档不生效（键已存在）。这里强制复位一次：那个功能在你的客户端上还没通，
+        -- 留着 true 会一直把 Questie 的提示框吞掉。
+        if not QCT.db.hideQuestieTipReverted then
+            QCT.db.hideQuestieTipReverted = true
+            QCT.db.hideQuestieTip = false
+        end
+
         if QCT.Log then QCT.Log:Init() end
         return
     end
