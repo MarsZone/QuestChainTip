@@ -2596,6 +2596,53 @@ function T:Enable()
             end
             lastMapOpen = mapOpen
 
+            -- 1.5.37：地图图标上把 Questie 的提示框收掉，只留我们自己的框。
+            -- 只在「能认出任务」时才收 —— 认不出就原样留着，免得更糟。
+            if mapOpen and QCT.db and QCT.db.hideQuestieTip ~= false then
+                local gtip = _G.GameTooltip
+                local gShown = gtip ~= nil and type(gtip.IsShown) == "function" and gtip:IsShown()
+                if T.mapHoverOwner then
+                    -- Questie 又把它弹回来的话，继续按掉
+                    if gShown then pcall(gtip.Hide, gtip) end
+                elseif gShown then
+                    local hoverOwner = CurrentOwner(gtip)
+                    if hoverOwner and QuestieIconKind(hoverOwner) == "map" then
+                        local qid = T:ResolveQuestIdFromOwner(hoverOwner)
+                        if qid then
+                            T.mapHoverOwner = hoverOwner
+                            T.lastQuestId = qid
+                            T:Update(qid)
+                            pcall(gtip.Hide, gtip)
+                        end
+                    end
+                end
+            end
+
+            -- 我们把 Questie 的地图提示框收掉了，所以「鼠标离开图标」要自己判断：
+            -- 光标不在那个图标的矩形里（或地图关了）就把面板收起来
+            if T.mapHoverOwner then
+                local leave = false
+                if not mapOpen then
+                    leave = true
+                else
+                    local left, bottom, width, height = FrameRect(T.mapHoverOwner)
+                    if not left then
+                        leave = true
+                    elseif T.CursorPos then
+                        local cx, cy = T.CursorPos()
+                        if cx then
+                            local margin = 12
+                            leave = not (cx >= left - margin and cx <= left + width + margin
+                                and cy >= bottom - margin and cy <= bottom + height + margin)
+                        end
+                    end
+                end
+                if leave then
+                    T.mapHoverOwner = nil
+                    T:Hide()
+                end
+            end
+
             local tip = _G.GameTooltip
             if not tip then return end
             local owner = tip.GetOwner and tip:GetOwner()

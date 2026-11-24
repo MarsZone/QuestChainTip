@@ -39,6 +39,7 @@ local DEFAULTS = {
     showChain = true,
     chainRewards = true,    -- 后续任务每行也显示经验/金钱/状态
     showPrereq = true,      -- 是否显示前置任务
+    hideQuestieTip = true,  -- 地图图标上收掉 Questie 的提示框，只显示我们自己的面板（默认开）
     panelMode = "map",      -- 悬停面板：off=关闭 / map=仅世界地图（默认） / all=全部位置
     chainKey = "SHIFT",     -- 详情窗快捷键（世界地图）：SHIFT / CTRL / ALT / NONE / 任意键
     questLogKey = "ALT",    -- 任务日志快捷键：ALT / CTRL / NONE（Shift 留给原生的链接到聊天框）
@@ -285,6 +286,9 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
                 QCT.db.panelMode = "map"
             end
         end
+
+        -- 静音只是排查开关，不跨会话保留：免得哪天忘了关，以为插件坏了
+        QCT.db.muted = false
 
         if QCT.Log then QCT.Log:Init() end
         return

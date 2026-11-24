@@ -262,7 +262,7 @@ local function CreatePanel()
     local frame = CreateFrame("Frame", PANEL_NAME, UIParent, backdropTemplate)
     -- 比最初高 190px：多了两个快捷键、两行宽度和小地图图标，
     -- 底部按钮和提示语不能被挤到一起（1.5.26 去掉血量那两行，矮了 60px）
-    frame:SetSize(WIDTH, 640)
+    frame:SetSize(WIDTH, 670)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -325,6 +325,10 @@ local function CreatePanel()
 
     -- 1.5.26 起「血量数值显示」整个功能停用（会一直扫框体找血条，太费），
     -- 所以设置里这两行也一起撤掉了。
+
+    -- 地图图标：默认收掉 Questie 的提示框，只留我们自己的框
+    NewCheck(frame, L["地图图标只显示本插件的面板（隐藏 Questie 提示框）"], "hideQuestieTip", 22, y)
+    y = y - ROW
 
     NewCheck(frame, L["显示小地图图标"], "minimap", 22, y)
     y = y - ROW
